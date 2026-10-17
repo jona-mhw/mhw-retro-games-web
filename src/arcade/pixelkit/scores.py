@@ -45,6 +45,8 @@ DEFAULTS = {
     # ciudad con manzanas y ninguno sabe escaparse de la policía. la mediana de
     # un bot con gps quedó en $300 y su mejor corrida en $1.144, así que estos
     # números son un piso pensado para un humano, no una medición.
+    # neón: 20 partidas por bot; el experto saca ~280k, el torpe 98-270k.
+    "neon":    [("NEO", 180000), ("SOL", 90000), ("VHS", 35000)],
     "autos":   [("GTA", 1800), ("VIP", 900), ("DRV", 400)],
 }
 

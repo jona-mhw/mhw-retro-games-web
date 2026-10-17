@@ -1,0 +1,20 @@
+# manifiesto del juego. el id es el nombre de la carpeta (games/neon).
+# es el único del cabinet en formato vertical: en el celular parado llena la
+# pantalla entera.
+[game]
+title    = "Neón"
+author   = "Jona"
+year     = 2026
+badge    = "nuevo"          # cartel que titila en el menú
+width    = 180
+height   = 320
+blurb    = "shmup vertical: oleadas, roces que pagan, un mini-jefe y un jefe final que trae su propio sol"
+controls = "flechas mueven · dispara solo · x bomba · z foco"
+
+# controles táctiles (celular): los dibuja index.html bajo la pantalla.
+# pad "drag" es un trackpad: el dedo se arrastra abajo y la nave se mueve
+# arriba, sin taparla. el disparo es automático, así que con un dedo se juega.
+[game.touch]
+pad     = "drag"
+buttons = [["bomba", "x"], ["foco", "z"]]
+hint    = "arrastra abajo para moverte · dispara solo"
