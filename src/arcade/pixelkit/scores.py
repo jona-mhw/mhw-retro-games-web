@@ -34,8 +34,10 @@ DEFAULTS = {
     # el jugador perfecto simulado la cobra entera (+50) y hace 230-500 con el
     # muro. estos siguen siendo un piso para un humano, no una medición.
     "pong":    [("CPU", 60), ("ACE", 35), ("NET", 15)],
-    "esquiva": [("DGE", 220), ("RUN", 120), ("HOP", 55)],
-    "asteroides": [("VEC", 3000), ("ORB", 1600), ("AST", 700)],
+    # esquiva y asteroides cambiaron de escala con oleadas, jefe y frenesí:
+    # calibrados con bots de lógica pura, por debajo de su mediana.
+    "esquiva": [("DGE", 900), ("RUN", 450), ("HOP", 180)],
+    "asteroides": [("VEC", 25000), ("ORB", 12000), ("AST", 5000)],
     # cruzar quedó de piso: el bot espera de más para elegir hueco y sólo logró
     # 3-6 cruces en 90 s. un humano lee el tráfico mucho mejor que esa heurística
     "cruzar":  [("HOP", 1200), ("RAN", 700), ("PIE", 300)],

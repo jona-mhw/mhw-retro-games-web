@@ -5,12 +5,13 @@ author   = "Jona"
 year     = 2026
 width    = 256
 height   = 208
-blurb    = "vectores e inercia: las piedras se parten, las seguidas hacen combo y la dorada se escapa"
-controls = "izq/der giran · arriba empuja · espacio dispara · abajo frena"
+blurb    = "oleadas de piedra, minas que estallan en cadena, cometas y una tormenta final"
+controls = "izq/der giran · arriba empuja · abajo frena · espacio dispara (mantén) · c auto-fuego"
 
 # controles táctiles (celular): los dibuja index.html bajo la pantalla.
-# pad: "4" cruceta, "lr" izq/der, "ud" arriba/abajo, "none" sin pad.
-# buttons: [nombre, tecla]; la tecla es la del teclado que el botón aprieta.
+# en el celular el auto-fuego arranca prendido: ◀ ▶ con un pulgar, empuje y
+# freno con el otro. "auto" lo apaga o lo prende.
 [game.touch]
 pad     = "lr"                  # izq/der giran la nave
-buttons = [["fuego", "space"], ["empuje", "up"], ["freno", "down"]]
+buttons = [["fuego", "space"], ["empuje", "up"], ["freno", "down"], ["auto", "c"]]
+hint    = "auto-fuego prendido: gira y empuja · auto lo apaga"
