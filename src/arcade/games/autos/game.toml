@@ -5,12 +5,13 @@ author   = "Jona"
 year     = 2026
 width    = 384
 height   = 288
-blurb    = "gta 2 en 90 segundos: levantá fajos, esquivá patrullas y pasá por el banco a guardarlos"
-controls = "flechas o wasd manejan · esc salir"
+blurb    = "gta 2 en 90 segundos: levanta fajos, cumple misiones, derrapa, salta rampas y escapa de 5 estrellas"
+controls = "flechas o wasd manejan · freno + doblar = derrape · esc salir"
 
 # controles táctiles (celular): los dibuja index.html bajo la pantalla.
-# pad: "4" cruceta, "lr" izq/der, "ud" arriba/abajo, "none" sin pad.
-# buttons: [nombre, tecla]; la tecla es la del teclado que el botón aprieta.
+# en el celular el auto acelera solo (game.py: con_dedo), así que basta el
+# freno: frenar a fondo es reversa, y frenar doblando a velocidad, derrape.
 [game.touch]
 pad     = "lr"                  # izq/der doblan
-buttons = [["acelerar", "up"], ["reversa", "down"]]
+buttons = [["freno", "down"]]
+hint    = "acelera solo · ◀ ▶ doblan · freno + doblar = derrape"

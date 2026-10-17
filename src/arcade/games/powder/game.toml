@@ -7,14 +7,14 @@ author   = "Jona"
 year     = 2026
 width    = 320
 height   = 240
-blurb    = "17 materiales que caen, arden, fluyen, salpican y hacen circuitos"
-controls = "click pinta · rueda pincel · 1-0 material · espacio pausa · esc salir"
+blurb    = "23 materiales que caen, arden y fluyen: cohetes, virus, rayos, clonador y un agujero negro"
+controls = "click pinta · der borra · rueda o z pincel · x deshace · 1-0 o tab material · espacio pausa · h menú · esc salir"
 
 # controles táctiles (celular): los dibuja index.html bajo la pantalla.
-# pad: "4" cruceta, "lr" izq/der, "ud" arriba/abajo, "none" sin pad.
-# buttons: [nombre, tecla]; la tecla es la del teclado que el botón aprieta.
+# se pinta con el dedo sobre la pantalla y el material se elige en la barra
+# de abajo (pestañas por categoría). vaciar y cambiar de escena están en el
+# menú, que se abre con su botón.
 [game.touch]
 pad     = "none"                # se pinta con el dedo
-buttons = [["pausa", "space"], ["pincel +", "wheelup"], ["pincel −", "wheeldown"],
-           ["vaciar", "c"], ["escena", "r"], ["ayuda", "h"]]
-hint    = "pinta con el dedo · toca la barra para elegir material"
+buttons = [["pincel", "z"], ["deshacer", "x"], ["pausa", "space"], ["menú", "h"]]
+hint    = "pinta con el dedo · elige el material en las pestañas de abajo"

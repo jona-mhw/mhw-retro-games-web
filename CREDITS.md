@@ -13,12 +13,15 @@
 - **Powder Game** — Dan-Ball ([dan-ball.jp](https://dan-ball.jp)) — el falling sand que inspiró el juego `powder`
 
 ## juegos en el cabinet
-- **powder** — Jona, 2026 — física de partículas, 18 materiales que caen, arden, fluyen y hacen circuitos
-- **culebra** — Jona, 2026 — snake
-- **bloques** — Jona, 2026 — tetris
-- **pong** — Jona, 2026 — pong vs máquina
-- **esquiva** — Jona, 2026 — dodger
+- **neón** — Jona, 2026 — shoot'em up vertical synthwave
+- **asteroides** — Jona, 2026 — vectores e inercia
 - **autos** — Jona, 2026 — top-down driver estilo gta 2
+- **bloques** — Jona, 2026 — tetris blitz
+- **cruzar** — Jona, 2026 — cruzar carriles
+- **culebra** — Jona, 2026 — snake
+- **esquiva** — Jona, 2026 — dodger
+- **pong** — Jona, 2026 — pong vs máquina
+- **powder** — Jona, 2026 — física de partículas
 
 ---
 

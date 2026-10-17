@@ -49,7 +49,10 @@ DEFAULTS = {
     # números son un piso pensado para un humano, no una medición.
     # neón: 20 partidas por bot; el experto saca ~280k, el torpe 98-270k.
     "neon":    [("NEO", 180000), ("SOL", 90000), ("VHS", 35000)],
-    "autos":   [("GTA", 1800), ("VIP", 900), ("DRV", 400)],
+    # el rediseño de autos (misiones, estrellas, rampas, derrapes) subió la
+    # escala: el bot con gps hizo mediana $6.100 en 14 partidas (mín. $2.840).
+    # un humano en el celular maneja peor: van por debajo.
+    "autos":   [("GTA", 5000), ("VIP", 2500), ("DRV", 1000)],
 }
 
 

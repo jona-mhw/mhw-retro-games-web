@@ -4,25 +4,28 @@
 # cada material ocupa un rango de tonos, así la textura viaja con la partícula
 # y el frame se dibuja copiando el bytearray al framebuffer, sin conversión.
 # la simulación solo recorre los chunks que tuvieron actividad.
+import math
 import os
 import random
+from collections import deque
 
 import pyxel
 
-from pixelkit import config, crt, web
+from pixelkit import config, crt, fx, web
 from pixelkit.blit import FpsMeter, blit_slow, fast_blit
 from pixelkit.palette import shades as _shades
-from pixelkit.pxtext import ctext, text as pxtext
+from pixelkit.pxtext import _ACUTE, _TILDE, ctext, text as pxtext
 
 W, H = 320, 240
-# la barra va en dos filas con el NOMBRE debajo de cada material. en una sola
-# fila entraban 18 swatches de 16 px y en 16 px no cabe ni una palabra de 4
-# letras: había que pasar el mouse por encima para saber qué era cada color.
-# con dos filas cada celda mide 35 px ≈ 8 caracteres, y ahí entra "pólvora".
-TOOL_COLS = 9
-TOOL_CW = W // TOOL_COLS         # ancho de celda: swatch + nombre debajo
-TOOL_ROW_H = 21                  # 13 del swatch + el renglón del nombre
-UI_H = 2 * TOOL_ROW_H + 14       # las dos filas más la línea de estado
+# la barra de abajo va **por categorías**: una fila de 5 pestañas (polvos,
+# fluidos, sólidos, energía, borrar) y debajo los materiales de la pestaña
+# abierta, a lo sumo 6, en celdas de 53×31 px. en el celular (~1.2x) son
+# casillas de 64×37 px de pantalla: se aciertan con el dedo. la barra vieja
+# de dos filas de 9 tenía celdas de 35×21 y swatches de 13 px.
+TAB_H = 15
+CELL_H = 31
+CELL_W = 53
+UI_H = TAB_H + CELL_H
 SH = H - UI_H  # alto del área de simulación
 
 CHB = 5  # chunk de 32x32
@@ -34,7 +37,9 @@ NCHUNK = CW * CH_ROWS
 # tipos lógicos
 (K_EMPTY, K_WALL, K_WOOD, K_METAL, K_TRUNK, K_LEAF, K_SAND, K_WATER, K_OIL,
  K_PLANT, K_ACID, K_FIRE, K_LAVA, K_STONE, K_STEAM, K_SMOKE, K_POWDER,
- K_ICE, K_SEED, K_GAS, K_SPARK, K_MCOOL) = range(22)
+ K_ICE, K_SEED, K_GAS, K_SPARK, K_MCOOL,
+ K_SNOW, K_FWORK, K_ROCKET, K_EMBER, K_VIRUS, K_BHOLE, K_CLONE,
+ K_PLASMA, K_ROCK) = range(31)
 
 NAMES = {
     K_WALL: "muro", K_WOOD: "madera", K_SAND: "arena", K_WATER: "agua",
@@ -43,7 +48,12 @@ NAMES = {
     K_POWDER: "pólvora", K_EMPTY: "borrar", K_ICE: "hielo", K_SEED: "semilla",
     K_GAS: "gas", K_SPARK: "chispa", K_METAL: "metal",
     K_TRUNK: "tronco", K_LEAF: "hoja",
+    K_SNOW: "nieve", K_FWORK: "cohete", K_ROCKET: "cohete", K_EMBER: "chispas",
+    K_VIRUS: "virus", K_BHOLE: "agujero negro", K_CLONE: "clonador",
+    K_PLASMA: "rayo", K_ROCK: "roca",
 }
+# en la casilla de 53 px entran 12 letras justas
+SHORT = {**NAMES, K_BHOLE: "agujero"}
 
 FIRE_RAMP = (0xFFF6D8, 0xFFE89A, 0xFFD24A, 0xFFAE1E, 0xFF8A12, 0xF5670C,
              0xE04A08, 0xC23306, 0x9C2205, 0x7A1604, 0x551003, 0x3A0B02)
@@ -72,6 +82,7 @@ _reg(K_WOOD, _shades(0x8A5A2E, 4))
 _reg(K_METAL, _shades(0xB8C2D0, 4))
 _reg(K_TRUNK, _shades(0x8A5C30, 4))
 _reg(K_LEAF, _shades(0x4FC24F, 5))
+_reg(K_ROCK, _shades(0x4E4650, 4, 0.8, 1.15))    # roca de escenografía (volcán)
 FIRST_ACTIVE = len(PAL)
 _reg(K_SAND, _shades(0xE8C96A, 5))
 # el 5º tono del agua es "templada": la que acaba de salir del hielo.
@@ -93,20 +104,49 @@ _reg(K_SPARK, [0xFFFFFF, 0xC8F0FF, 0x7ADCFF, 0x3AB4F0])
 # cable recién descargado: mientras enfría no vuelve a conducir, así el pulso
 # avanza en una sola dirección en vez de rebotar (como en wireworld)
 _reg(K_MCOOL, _shades(0x7E8698, 3))
+# lo nuevo. todo activo: va después de FIRST_ACTIVE
+_reg(K_SNOW, _shades(0xEEF4FF, 3, 0.90, 1.0))
+_reg(K_FWORK, [0xE03A44, 0xF2ECE0, 0xC02A34, 0x3A5AD0])     # cohete a rayas
+# los fuegos artificiales vienen en 5 colores: el cohete lleva el suyo en el
+# tono (ROCKET_BASE + color) y las chispas en un tramo de 4 que se apaga
+FW_COLORS = ((0xFF5A6E, 0xE8304A, 0xA81A30, 0x5A0C18),       # rojo
+             (0x8AFF7A, 0x3ED84A, 0x1E9A2E, 0x0C4A16),       # verde
+             (0x9AD8FF, 0x4A9EFF, 0x2A5AE0, 0x142A80),       # azul
+             (0xFFF08A, 0xFFC83A, 0xE08A1A, 0x7A400A),       # oro
+             (0xFF9AF0, 0xF04ADC, 0xA82AA8, 0x501450))       # rosa
+NFW = len(FW_COLORS)
+_reg(K_ROCKET, [c[0] for c in FW_COLORS])
+_reg(K_EMBER, [t for c in FW_COLORS for t in c])
+_reg(K_VIRUS, _shades(0xC844E8, 4, 0.7, 1.15))
+_reg(K_BHOLE, [0x000000, 0x7A3AE0, 0xB88AFF, 0xF0E0FF])   # núcleo y borde que brilla
+_reg(K_CLONE, [0x8A7A4A, 0xE8C040, 0xFFE070])               # apagado, cargado x2
+_reg(K_PLASMA, [0xFFFFFF, 0xEAF6FF, 0xB8E2FF, 0x88BCFF])
 
-UI_BG, UI_LINE, UI_DIM, UI_TXT, UI_HI = 250, 251, 252, 253, 254
+LAB_RED, UI_TAB, UI_SH, UI_BG, UI_LINE, UI_DIM, UI_TXT, UI_HI = (247, 248, 249, 250,
+                                                               251, 252, 253, 254)
 while len(PAL) < 256:
     PAL.append(0)
+PAL[LAB_RED] = 0xE04A4A
+PAL[UI_TAB] = 0x22263A
+PAL[UI_SH] = 0x050508
 PAL[UI_BG] = 0x101018
 PAL[UI_LINE] = 0x2E3242
-PAL[UI_DIM] = 0x6A7085
+PAL[UI_DIM] = 0x8A90A8
 PAL[UI_TXT] = 0xE8ECF5
 PAL[UI_HI] = 0xFFD24A
 KIND = bytes(_KIND)
+INERT = bytes(range(FIRST_ACTIVE))   # lo que el loop descarta sin mirar
 
 F_BASE, F_N = BASE[K_FIRE], NVAR[K_FIRE]
 L_BASE, L_N = BASE[K_LAVA], NVAR[K_LAVA]
 SP_BASE, SP_N = BASE[K_SPARK], NVAR[K_SPARK]
+RK_BASE = BASE[K_ROCKET]
+EM_BASE = BASE[K_EMBER]
+VI_BASE, VI_N = BASE[K_VIRUS], NVAR[K_VIRUS]
+BH_BASE, BH_N = BASE[K_BHOLE], NVAR[K_BHOLE]
+CL_BASE = BASE[K_CLONE]
+PL_BASE, PL_N = BASE[K_PLASMA], NVAR[K_PLASMA]
+SM_BASE, SM_N = BASE[K_SMOKE], NVAR[K_SMOKE]
 WA_BASE, WA_N = BASE[K_WATER], NVAR[K_WATER] - 1  # tonos de agua fría
 W_WARM = BASE[K_WATER] + WA_N                     # agua recién deshelada
 # tabla (índice de paleta, fila) -> con qué índice se dibuja la celda al llegar a
@@ -151,38 +191,75 @@ FLAMMABLE = {K_PLANT: 0.30, K_OIL: 0.70, K_WOOD: 0.05, K_LEAF: 0.38,
              K_TRUNK: 0.06, K_SEED: 0.25, K_GAS: 0.90}
 # lo que el ácido NO disuelve
 ACID_PROOF = (K_EMPTY, K_WALL, K_ACID, K_WATER, K_FIRE, K_SMOKE, K_STEAM,
-              K_SPARK, K_GAS)
+              K_SPARK, K_GAS, K_CLONE, K_BHOLE, K_PLASMA, K_EMBER, K_ROCKET)
 # suelo firme donde una semilla puede echar raíz
-SOIL = (K_SAND, K_STONE, K_WOOD, K_PLANT, K_TRUNK, K_WALL, K_METAL)
-# lo que enciende al gas y a la pólvora
-HOT = (K_FIRE, K_LAVA, K_SPARK)
+SOIL = (K_SAND, K_STONE, K_WOOD, K_PLANT, K_TRUNK, K_WALL, K_METAL, K_ROCK)
+# lo que enciende al gas, a la pólvora, al cohete y derrite la nieve
+HOT = (K_FIRE, K_LAVA, K_SPARK, K_PLASMA)
+# el virus se come todo menos esto (y el fuego lo quema)
+VIRUS_PROOF = (K_EMPTY, K_WALL, K_ROCK, K_VIRUS, K_CLONE, K_BHOLE, K_FIRE, K_SMOKE,
+               K_STEAM, K_EMBER, K_PLASMA, K_LAVA, K_SPARK, K_ROCKET)
+# el agujero negro chupa todo menos esto
+BH_PROOF = (K_EMPTY, K_WALL, K_BHOLE, K_CLONE, K_ROCK)
+BH_RAY = 15                      # de cerca: hasta dónde mira cada celda del borde
+BH_R = 34                        # alcance del tirón, en celdas
+# lo que el clonador puede copiar: lo que se mueve o cambia, nada de muros
+CLONABLE = bytes(1 if (_i >= FIRST_ACTIVE and _KIND[_i] not in
+                       (K_CLONE, K_BHOLE, K_ROCKET, K_EMBER, K_PLASMA, K_SPARK,
+                        K_MCOOL, K_TRUNK, K_LEAF)) else 0 for _i in range(256))
+CLONE_P = 0.06                   # cuánto escupe por frame cada celda cargada
+CLONE_FW = 0.012
+# cada uno a su ritmo: los cohetes poco (cada uno es un show), la lava mucho
+# (es viscosa y se amontona en la boca: si sale poco, el volcán no erupciona)
+CLONE_RATE = {K_FWORK: CLONE_FW, K_LAVA: 0.5}
+# lo que un cohete atraviesa al subir
+ROCKET_PASS = bytes(1 if _KIND[_i] in (K_FWORK, K_SMOKE, K_STEAM, K_EMBER, K_FIRE,
+                                       K_GAS) else 0 for _i in range(256))                 # los cohetes, mucho menos: cada uno es un show
+LAVA_COOL = 0.0006               # la lava quieta se hace piedra (≈30 s): un
+                                 # volcán que no se enfría llena la pantalla
+VIRUS_LIFE = (50, 110)
+# lo que necesita una vida en `aux` al nacer (si no, se muere en el acto)
+VIDA = (K_FIRE, K_STEAM, K_SMOKE, K_VIRUS)
+PLASMA_LIFE = 10
 # lo que el pincel puede desplazar: se le echa lava al mar sin borrarlo antes,
 # pero lo que construiste (muro, metal, hielo...) no se pisa por accidente
 REPLACEABLE = (K_EMPTY, K_WATER, K_OIL, K_ACID, K_STEAM, K_SMOKE, K_GAS, K_FIRE)
+REPL = bytes(1 if _KIND[_i] in REPLACEABLE else 0 for _i in range(256))
 NB4 = ((1, 0), (-1, 0), (0, 1), (0, -1))
 NB8 = ((1, 0), (-1, 0), (0, 1), (0, -1),
        (1, 1), (1, -1), (-1, 1), (-1, -1))
 
-TOOLS = (K_SAND, K_WATER, K_WALL, K_FIRE, K_PLANT, K_OIL, K_ACID, K_LAVA,
-         K_POWDER, K_WOOD, K_STONE, K_ICE, K_SEED, K_GAS, K_METAL, K_SPARK,
-         K_EMPTY)
+CATS = (("polvos", (K_SAND, K_POWDER, K_STONE, K_SEED, K_SNOW, K_FWORK)),
+        ("fluidos", (K_WATER, K_OIL, K_ACID, K_LAVA, K_GAS, K_VIRUS)),
+        ("sólidos", (K_WALL, K_WOOD, K_METAL, K_ICE, K_PLANT, K_CLONE)),
+        ("energía", (K_FIRE, K_SPARK, K_PLASMA, K_BHOLE)),
+        ("borrar", (K_EMPTY,)))
+TOOLS = tuple(k for _, ks in CATS for k in ks)
+TAB_W = W // len(CATS)
+TOOL_CAT = {k: c for c, (_, ks) in enumerate(CATS) for k in ks}
 
 
-def tool_box(n):
-    """(x, y) del swatch n en la barra de dos filas."""
-    fila, col = divmod(n, TOOL_COLS)
-    return col * TOOL_CW + (TOOL_CW - 13) // 2, SH + 3 + fila * TOOL_ROW_H
+def cat_of(tool):
+    """la pestaña donde vive la herramienta n."""
+    return TOOL_CAT[TOOLS[tool]]
 
 
-def tool_at(mx, my):
-    """qué material hay bajo el mouse en la barra, o -1 si no hay ninguno."""
+def cell_box(i):
+    """(x, y, w, h) de la casilla i de la fila de materiales."""
+    return 1 + i * CELL_W, SH + TAB_H, CELL_W - 1, CELL_H
+
+
+def tool_at(mx, my, cat):
+    """qué hay bajo el dedo en la barra: ("tab", c), ("tool", n) o None."""
     if my < SH:
-        return -1
-    fila = (my - SH) // TOOL_ROW_H
-    if fila > (len(TOOLS) - 1) // TOOL_COLS:
-        return -1
-    n = fila * TOOL_COLS + min(TOOL_COLS - 1, mx // TOOL_CW)
-    return n if 0 <= n < len(TOOLS) else -1
+        return None
+    if my < SH + TAB_H:
+        return ("tab", max(0, min(len(CATS) - 1, mx // TAB_W)))
+    i = (mx - 1) // CELL_W
+    ks = CATS[cat][1]
+    if 0 <= i < len(ks):
+        return ("tool", TOOLS.index(ks[i]))
+    return None
 
 
 def fire_tone(life):
@@ -202,11 +279,14 @@ class Sim:
         self._zc = bytes(NCHUNK)
         self.frame = 0
         self.awake = NCHUNK
+        self.bursts = []               # fuegos artificiales abriéndose: [x, y, r, rmax, color]
+        self.flash = 0                 # frames de fogonazo pendientes (los rayos)
 
     def clear(self):
         self.g[:] = self._zero
         self.aux[:] = self._zero
         self.active[:] = b"\x01" * NCHUNK
+        self.bursts = []
 
     def wake(self, x, y):
         c = (y >> CHB) * CW + (x >> CHB)
@@ -222,6 +302,8 @@ class Sim:
         r = random.random
         ri = random.randint
         f = self.frame
+        if self.bursts:
+            self._abrir_fuegos()
 
         for y in range(SH - 1, -1, -1):
             crow = (y >> CHB) * CW
@@ -238,6 +320,11 @@ class Sim:
                 x1 = x0 + CHS
                 if x1 > W:
                     x1 = W
+                # el tramo de fila sin nada que se mueva se salta de un saque:
+                # un translate en C contra 32 vueltas de python. en un chunk
+                # despierto la mayoría de las filas son aire o muro.
+                if not g[row + x0:row + x1].translate(None, INERT):
+                    continue
                 xs = range(x1 - 1, x0 - 1, -1) if flip else range(x0, x1)
                 for x in xs:
                     i = row + x
@@ -246,7 +333,18 @@ class Sim:
                         continue
                     k = KND[e]
 
-                    if k == K_SAND or k == K_POWDER or k == K_STONE:
+                    if k == K_SAND or k == K_POWDER or k == K_STONE or k == K_FWORK:
+                        if k == K_FWORK:
+                            # la mecha: algo caliente al lado y despega
+                            dx, dy = NB4[int(r() * 4)]
+                            nx, ny = x + dx, y + dy
+                            if 0 <= nx < W and 0 <= ny < SH and \
+                                    KND[g[ny * W + nx]] in HOT:
+                                g[i] = RK_BASE + int(r() * NFW)
+                                aux[i] = ri(60, 130)
+                                upd[i] = 1
+                                nxt[chunk] = 1
+                                continue
                         if y < SH - 1:
                             j = i + W
                             b = g[j]
@@ -266,6 +364,10 @@ class Sim:
                                 nxt[chunk] = 1
                                 nxt[down_row + cx] = 1
                                 continue
+                            if bk in LIQUIDS:
+                                # se hunde, sólo que no en este frame: que el
+                                # chunk no se duerma con el grano a medio camino
+                                nxt[chunk] = 1
                             if k != K_STONE:
                                 d = 1 if r() < 0.5 else -1
                                 for dx in (d, -d):
@@ -280,6 +382,19 @@ class Sim:
                         continue
 
                     if k == K_WATER or k == K_OIL or k == K_ACID:
+                        # el atajo del charco: una gota encerrada (abajo, los
+                        # costados y las diagonales de abajo ocupados) no tiene
+                        # a dónde ir, y el interior de un lago son miles de ésas
+                        # en cada frame. se descarta sin sortear nada. el ácido y
+                        # el agua templada no: tienen cosas que hacer quietos.
+                        if k != K_ACID and e != W_WARM and 0 < x < W - 1 \
+                                and y < SH - 1:
+                            j = i + W
+                            b = g[j]
+                            if b and g[i - 1] and g[i + 1] and g[j - 1] \
+                                    and g[j + 1] and (aux[i] & 15) < SPLASH_MIN \
+                                    and not (k == K_WATER and KND[b] == K_OIL):
+                                continue
                         if e == W_WARM:
                             nxt[chunk] = 1  # sigue viva mientras se enfría
                             if r() < 0.012:
@@ -329,6 +444,11 @@ class Sim:
                                 nxt[down_row + cx] = 1
                                 moved = True
                             else:
+                                if k == K_WATER and KND[b] == K_OIL:
+                                    # el aceite de abajo todavía tiene que subir:
+                                    # sin esto, un frame sin suerte dormía el chunk
+                                    # con el aceite atrapado en el fondo
+                                    nxt[chunk] = 1
                                 d = 1 if r() < 0.5 else -1
                                 for dx in (d, -d):
                                     nx = x + dx
@@ -484,6 +604,11 @@ class Sim:
                                 upd[j2] = 1
                                 nxt[(ny >> CHB) * CW + (nx >> CHB)] = 1
                         if turned:
+                            continue
+                        if r() < LAVA_COOL and not self._junto_a(x, y, K_CLONE):
+                            # se enfría: costra de piedra. la de la boca de un
+                            # clonador no, o el volcán se tapa solo
+                            g[i] = BASE[K_STONE] + int(r() * NVAR[K_STONE])
                             continue
                         if r() < 0.06:  # brasas: la lava respira
                             g[i] = L_BASE + int(r() * L_N)
@@ -774,6 +899,294 @@ class Sim:
                             aux[i] = a - 1
                         continue
 
+                    if k == K_EMBER:
+                        # chispa de fuego artificial: cae despacio, titila y se apaga
+                        life = aux[i]
+                        nxt[chunk] = 1
+                        if life <= 1:
+                            g[i] = 0
+                            aux[i] = 0
+                            continue
+                        life -= 1
+                        aux[i] = life
+                        c4 = EM_BASE + ((e - EM_BASE) & ~3)
+                        if r() < 0.12:
+                            e = c4                       # destello
+                        else:
+                            e = c4 + (0 if life > 40 else 1 if life > 24
+                                      else 2 if life > 10 else 3)
+                        g[i] = e
+                        if y < SH - 1 and r() < 0.3:
+                            dx = int(r() * 3) - 1
+                            nx = x + dx
+                            j = i + W + dx
+                            if 0 <= nx < W and g[j] == 0:
+                                g[j] = e
+                                aux[j] = life
+                                g[i] = 0
+                                aux[i] = 0
+                                upd[j] = 1
+                                nxt[down_row + (nx >> CHB)] = 1
+                        continue
+
+                    if k == K_ROCKET:
+                        # sube dejando una estela de fuego; sin mecha o contra
+                        # algo, revienta
+                        life = aux[i]
+                        nxt[chunk] = 1
+                        if life <= 1 or y < 16:      # que el anillo entre en pantalla
+                            self._reventar(x, y, e - RK_BASE)
+                            continue
+                        nx = x + (int(r() * 3) - 1 if r() < 0.2 else 0)
+                        j2 = i - W + (nx - x)
+                        if 0 <= nx < W and (g[j2] == 0 or ROCKET_PASS[g[j2]]):
+                            # lo liviano (otros cohetes de la pila, humo, chispas)
+                            # no lo frena: baja a ocupar su lugar. si no, un
+                            # cohete del fondo de la pila reventaba en el suelo
+                            b = g[j2]
+                            g[j2] = e
+                            aux[j2] = life - 1
+                            upd[j2] = 1
+                            if b and KND[b] == K_FWORK:
+                                g[i] = b
+                                aux[i] = 0
+                            else:
+                                g[i] = fire_tone(4)
+                                aux[i] = ri(3, 7)
+                            nxt[up_row + (nx >> CHB)] = 1
+                        elif 0 <= nx < W and KND[g[j2]] == K_ROCKET:
+                            aux[i] = life - 1          # otro cohete adelante: espera
+                        else:
+                            self._reventar(x, y, e - RK_BASE)
+                        continue
+
+                    if k == K_SNOW:
+                        # se derrite con calor al lado; cae lenta, se apila
+                        dx, dy = NB4[int(r() * 4)]
+                        nx, ny = x + dx, y + dy
+                        if 0 <= nx < W and 0 <= ny < SH and KND[g[ny * W + nx]] in HOT:
+                            g[i] = W_WARM
+                            aux[i] = 0
+                            nxt[chunk] = 1
+                            continue
+                        if y < SH - 1:
+                            j = i + W
+                            b = g[j]
+                            if b == 0:
+                                nxt[chunk] = 1           # aunque no caiga en este frame
+                                if r() < 0.55:
+                                    g[j] = e
+                                    g[i] = 0
+                                    upd[j] = 1
+                                    nxt[down_row + cx] = 1
+                                continue
+                            if KND[b] == K_WATER:        # en el agua se deshace
+                                nxt[chunk] = 1
+                                if r() < 0.04:
+                                    g[i] = WA_BASE + int(r() * WA_N)
+                                continue
+                            d = 1 if r() < 0.5 else -1
+                            for dx in (d, -d):
+                                nx = x + dx
+                                if 0 <= nx < W and g[i + dx] == 0 and g[j + dx] == 0:
+                                    nxt[chunk] = 1
+                                    if r() < 0.5:
+                                        g[j + dx] = e
+                                        g[i] = 0
+                                        upd[j + dx] = 1
+                                        nxt[down_row + (nx >> CHB)] = 1
+                                    break
+                        continue
+
+                    if k == K_VIRUS:
+                        # moho que se come lo que toca y después se muere
+                        life = aux[i]
+                        nxt[chunk] = 1
+                        if life <= 1:
+                            if r() < 0.4:
+                                g[i] = SM_BASE + int(r() * SM_N)
+                                aux[i] = ri(10, 30)
+                            else:
+                                g[i] = 0
+                                aux[i] = 0
+                            continue
+                        aux[i] = life - 1
+                        if r() < 0.2:
+                            g[i] = VI_BASE + int(r() * VI_N)
+                        dx, dy = NB4[int(r() * 4)]
+                        nx, ny = x + dx, y + dy
+                        if 0 <= nx < W and 0 <= ny < SH:
+                            j2 = ny * W + nx
+                            b = g[j2]
+                            if b:
+                                tk = KND[b]
+                                if tk == K_FIRE or tk == K_LAVA or tk == K_PLASMA:
+                                    lf = ri(10, 25)          # el fuego lo quema
+                                    g[i] = fire_tone(lf)
+                                    aux[i] = lf
+                                elif tk not in VIRUS_PROOF and r() < 0.5:
+                                    g[j2] = VI_BASE + int(r() * VI_N)
+                                    aux[j2] = ri(VIRUS_LIFE[0], VIRUS_LIFE[1])
+                                    upd[j2] = 1
+                                    nxt[(ny >> CHB) * CW + (nx >> CHB)] = 1
+                        continue
+
+                    if k == K_BHOLE:
+                        # el núcleo no hace nada: sólo el borde (la celda que
+                        # tiene algo que no es agujero al lado) brilla y tira.
+                        # de cerca tira por un rayo hacia afuera, de a dos pasos
+                        # por frame (le gana a la gravedad: si no, la arena se
+                        # suelta y pasa de largo); de lejos elige celdas al azar
+                        # y las acerca torcidas, así lo que cae entra girando.
+                        nxt[chunk] = 1
+                        ux = uy = 0
+                        for dx, dy in NB8:
+                            nx, ny = x + dx, y + dy
+                            if 0 <= nx < W and 0 <= ny < SH and \
+                                    KND[g[ny * W + nx]] != K_BHOLE:
+                                ux += dx
+                                uy += dy
+                        if ux == 0 and uy == 0:
+                            g[i] = BH_BASE
+                            continue
+                        g[i] = BH_BASE + 1 + int(r() * (BH_N - 1))
+                        ux = 1 if ux > 0 else -1 if ux < 0 else 0
+                        uy = 1 if uy > 0 else -1 if uy < 0 else 0
+                        for d in range(1, BH_RAY):
+                            sx, sy = x + ux * d, y + uy * d
+                            if not (0 <= sx < W and 0 <= sy < SH):
+                                break
+                            js = sy * W + sx
+                            b = g[js]
+                            if not b:
+                                continue
+                            if KND[b] in BH_PROOF:
+                                break
+                            if d <= 2:
+                                g[js] = 0                # se lo tragó
+                                aux[js] = 0
+                                nxt[(sy >> CHB) * CW + (sx >> CHB)] = 1
+                                continue
+                            tx, ty = sx - ux * 2, sy - uy * 2
+                            jt = ty * W + tx
+                            if g[jt] == 0:
+                                g[jt] = b
+                                aux[jt] = aux[js]
+                                g[js] = 0
+                                aux[js] = 0
+                                upd[jt] = 1
+                                nxt[(ty >> CHB) * CW + (tx >> CHB)] = 1
+                                nxt[(sy >> CHB) * CW + (sx >> CHB)] = 1
+                        for _ in range(4):
+                            q = r()
+                            rad = 4 + q * BH_R
+                            ang = r() * 6.2832
+                            ox = int(math.cos(ang) * rad)
+                            oy = int(math.sin(ang) * rad)
+                            sx, sy = x + ox, y + oy
+                            if not (0 <= sx < W and 0 <= sy < SH):
+                                continue
+                            js = sy * W + sx
+                            b = g[js]
+                            if not b or KND[b] in BH_PROOF:
+                                continue
+                            for _ in range(5):
+                                # hacia el centro, con un cuarto de giro
+                                stx = -ox - oy * 0.6
+                                sty = -oy + ox * 0.6
+                                tx = sx + (1 if stx > 0.5 else -1 if stx < -0.5 else 0)
+                                ty = sy + (1 if sty > 0.5 else -1 if sty < -0.5 else 0)
+                                if not (0 <= tx < W and 0 <= ty < SH):
+                                    break
+                                jt = ty * W + tx
+                                bt = g[jt]
+                                if bt == 0:
+                                    g[jt] = b
+                                    aux[jt] = aux[js]
+                                    g[js] = 0
+                                    aux[js] = 0
+                                    upd[jt] = 1
+                                    nxt[(ty >> CHB) * CW + (tx >> CHB)] = 1
+                                    nxt[(sy >> CHB) * CW + (sx >> CHB)] = 1
+                                    sx, sy, js = tx, ty, jt
+                                    ox, oy = sx - x, sy - y
+                                elif KND[bt] == K_BHOLE:
+                                    g[js] = 0            # se lo tragó
+                                    aux[js] = 0
+                                    nxt[(sy >> CHB) * CW + (sx >> CHB)] = 1
+                                    break
+                                else:
+                                    break
+                        continue
+
+                    if k == K_CLONE:
+                        st = aux[i]
+                        if st == 0:
+                            # vacío: se carga con lo primero que lo toque
+                            for dx, dy in NB4:
+                                nx, ny = x + dx, y + dy
+                                if 0 <= nx < W and 0 <= ny < SH:
+                                    b = g[ny * W + nx]
+                                    if CLONABLE[b]:
+                                        aux[i] = KND[b]
+                                        g[i] = CL_BASE + 1
+                                        nxt[chunk] = 1
+                                        break
+                            continue
+                        nxt[chunk] = 1
+                        if r() < 0.1:
+                            g[i] = CL_BASE + 1 + int(r() * 2)
+                        if r() < CLONE_RATE.get(st, CLONE_P):
+                            # el primer vecino libre, empezando por uno al azar
+                            o = int(r() * 4)
+                            for n4 in range(4):
+                                dx, dy = NB4[(o + n4) & 3]
+                                nx, ny = x + dx, y + dy
+                                if 0 <= nx < W and 0 <= ny < SH:
+                                    j2 = ny * W + nx
+                                    if g[j2] == 0:
+                                        self.put(j2, st, ri(20, 60) if st in VIDA else 0)
+                                        upd[j2] = 1
+                                        nxt[(ny >> CHB) * CW + (nx >> CHB)] = 1
+                                        break
+                        continue
+
+                    if k == K_PLASMA:
+                        # el rayo: dura unos frames y le pega a todo lo que toca
+                        life = aux[i]
+                        nxt[chunk] = 1
+                        if life <= 1:
+                            g[i] = 0
+                            aux[i] = 0
+                            continue
+                        life -= 1
+                        aux[i] = life
+                        g[i] = PL_BASE + min(PL_N - 1, (PLASMA_LIFE - life) >> 1)
+                        for dx, dy in NB4:
+                            nx, ny = x + dx, y + dy
+                            if not (0 <= nx < W and 0 <= ny < SH):
+                                continue
+                            j2 = ny * W + nx
+                            tk = KND[g[j2]]
+                            if tk == K_METAL:
+                                g[j2] = SP_BASE
+                                aux[j2] = SPARK_LIFE
+                                upd[j2] = 1
+                                nxt[(ny >> CHB) * CW + (nx >> CHB)] = 1
+                            elif tk == K_POWDER:
+                                self.explode(nx, ny)
+                            elif tk == K_GAS or (tk in FLAMMABLE and r() < 0.3):
+                                lf = ri(20, 45)
+                                g[j2] = fire_tone(lf)
+                                aux[j2] = lf
+                                upd[j2] = 1
+                                nxt[(ny >> CHB) * CW + (nx >> CHB)] = 1
+                            elif tk == K_WATER and r() < 0.03:
+                                g[j2] = BASE[K_STEAM] + int(r() * NVAR[K_STEAM])
+                                aux[j2] = ri(30, 60)
+                                nxt[(ny >> CHB) * CW + (nx >> CHB)] = 1
+                        continue
+
         # un chunk con actividad despierta también a sus vecinos: cubre a la
         # partícula que cruza una frontera y a la que espera que se libere la
         # celda de al lado, en un chunk que si no seguiría dormido
@@ -790,6 +1203,15 @@ class Sim:
                             if 0 <= nx < CW:
                                 active[nb + nx] = 1
         self.awake = sum(active)
+
+    def _junto_a(self, x, y, kind):
+        """¿hay `kind` en alguna de las 8 celdas vecinas?"""
+        g = self.g
+        for dx, dy in NB8:
+            nx, ny = x + dx, y + dy
+            if 0 <= nx < W and 0 <= ny < SH and KIND[g[ny * W + nx]] == kind:
+                return True
+        return False
 
     def splash(self, x, y, fuerza):
         """la gota que llega con impulso se abre: gotas al costado y para arriba.
@@ -837,7 +1259,15 @@ class Sim:
                 if not 0 <= nx < W:
                     continue
                 j = ny * W + nx
-                if KIND[g[j]] == K_WALL:
+                kk = KIND[g[j]]
+                if kk == K_WALL or kk == K_CLONE or kk == K_BHOLE or kk == K_ROCK:
+                    continue
+                if kk == K_FWORK:              # la onda lanza los cohetes vecinos
+                    g[j] = RK_BASE + int(r() * NFW)
+                    aux[j] = ri(30, 80)
+                    self.wake(nx, ny)
+                    continue
+                if kk == K_ROCKET:
                     continue
                 if r() < 0.82:
                     lf = ri(6, 30)
@@ -848,6 +1278,114 @@ class Sim:
                     aux[j] = ri(15, 50)
                 self.upd[j] = 1
                 self.wake(nx, ny)
+
+    # --- fuegos artificiales y rayos ---
+
+    def _reventar(self, x, y, color):
+        """el cohete llegó arriba: se abre en un anillo que crece."""
+        self.g[y * W + x] = 0
+        self.aux[y * W + x] = 0
+        self.bursts.append([x, y, 1.0, random.randint(9, 15), color % NFW])
+        self.wake(x, y)
+
+    def _abrir_fuegos(self):
+        """cada frame, los fuegos en curso pintan un anillo un poco más grande:
+        así se ve la explosión abrirse, y las chispas que quedan caen solas."""
+        g, aux = self.g, self.aux
+        r = random.random
+        ri = random.randint
+        vivos = []
+        for b in self.bursts:
+            x, y, rad, rmax, c = b
+            base = EM_BASE + c * 4
+            n = int(6 + rad * 2.4)
+            a0 = r() * 6.2832
+            for k in range(n):
+                a = a0 + k * 6.2832 / n
+                px = int(x + math.cos(a) * rad)
+                py = int(y + math.sin(a) * rad * 0.9)
+                if 0 <= px < W and 0 <= py < SH:
+                    j = py * W + px
+                    kk = KIND[g[j]]
+                    if kk == K_EMPTY or kk == K_SMOKE or kk == K_EMBER:
+                        g[j] = base
+                        aux[j] = ri(28, 64)
+                        self.wake(px, py)
+            b[2] = rad + 1.4
+            if b[2] <= rmax:
+                vivos.append(b)
+        self.bursts = vivos
+
+    def bolt(self, tx, ty):
+        """un rayo: cae del cielo en zigzag hasta (tx, ty), o hasta lo primero
+        que encuentre en el camino, y ahí descarga. energiza el metal, prende
+        lo que arde, revienta la pólvora y lanza los cohetes."""
+        g = self.g
+        r = random.random
+        tx = max(0, min(W - 1, tx))
+        ty = max(0, min(SH - 1, ty))
+        x = max(0, min(W - 1, tx + random.randint(-28, 28)))
+        camino = []
+        golpe = (tx, ty)
+        libre = (K_EMPTY, K_SMOKE, K_STEAM, K_GAS, K_PLASMA, K_EMBER, K_FIRE)
+        for y in range(0, ty + 1):
+            falta = ty - y + 1
+            x0 = x
+            if r() < 0.7:
+                x += (1 if tx > x else -1 if tx < x else 0) * (1 + (abs(tx - x) > falta))
+            else:
+                x += int(r() * 3) - 1
+            x = max(0, min(W - 1, x))
+            k = KIND[g[y * W + x]]
+            if k not in libre:
+                golpe = (x, y)
+                break
+            if abs(x - x0) > 1:                # sin agujeros en el trazo
+                camino.append(((x + x0) // 2, y))
+            camino.append((x, y))
+            if x + 1 < W and KIND[g[y * W + x + 1]] in libre:
+                camino.append((x + 1, y))      # de dos de grueso: que se vea
+        # ramitas que se abren hacia abajo
+        ramas = []
+        for (x, y) in camino[::9]:
+            if r() < 0.5:
+                d = 1 if r() < 0.5 else -1
+                bx = x
+                for by in range(y, min(SH, y + 4 + int(r() * 10))):
+                    bx += d if r() < 0.6 else 0
+                    if 0 <= bx < W:
+                        ramas.append((bx, by))
+        for (x, y) in camino + ramas:
+            j = y * W + x
+            k = KIND[g[j]]
+            if k == K_EMPTY or k == K_SMOKE or k == K_STEAM:
+                g[j] = PL_BASE
+                self.aux[j] = PLASMA_LIFE + int(r() * 3)
+                self.wake(x, y)
+            elif k == K_GAS:
+                self.put(j, K_FIRE, 30)
+                self.wake(x, y)
+        # la descarga: plasma alrededor del punto donde pegó
+        gx, gy = golpe
+        for dy in range(-2, 3):
+            for dx in range(-2, 3):
+                nx, ny = gx + dx, gy + dy
+                if 0 <= nx < W and 0 <= ny < SH and dx * dx + dy * dy <= 5:
+                    j = ny * W + nx
+                    k = KIND[g[j]]
+                    if k == K_EMPTY or k == K_SMOKE or k == K_STEAM:
+                        g[j] = PL_BASE
+                        self.aux[j] = PLASMA_LIFE
+                    elif k == K_METAL:
+                        g[j] = SP_BASE
+                        self.aux[j] = SPARK_LIFE
+                    elif k == K_POWDER:
+                        self.explode(nx, ny)
+                    elif k in FLAMMABLE:
+                        self.put(j, K_FIRE, random.randint(20, 50))
+                    self.wake(nx, ny)
+        self.flash = 3
+        return golpe
 
     def put(self, j, kind, life=0):
         if kind == K_EMPTY:
@@ -867,44 +1405,79 @@ class Sim:
             self.aux[j] = life
 
     def paint(self, cx, cy, kind, rad):
-        g = self.g
+        """un sello redondo del pincel en (cx, cy).
+
+        va por filas (el ancho de cada fila sale de la raíz, no se prueba el
+        círculo celda por celda) y despierta los chunks del recuadro una sola
+        vez al final: con el pincel de 16 eran 1.000 llamadas a wake por sello.
+        """
+        g, aux = self.g, self.aux
         r = random.random
         ri = random.randint
         r2 = rad * rad
-        solid = kind in (K_WALL, K_WOOD, K_PLANT, K_METAL, K_ICE)
+        solid = kind in (K_WALL, K_WOOD, K_PLANT, K_METAL, K_ICE, K_CLONE, K_BHOLE)
+        # lo común (arena, muro, lava...) va por el camino corto
+        simple = kind not in (K_EMPTY, K_VIRUS, K_SPARK, K_FIRE, K_WATER)
+        base = BASE.get(kind, 0)
+        nv = NVAR.get(kind, 1)
         for dy in range(-rad, rad + 1):
             ny = cy + dy
             if not 0 <= ny < SH:
                 continue
-            for dx in range(-rad, rad + 1):
-                if dx * dx + dy * dy > r2:
-                    continue
-                nx = cx + dx
-                if not 0 <= nx < W:
-                    continue
-                j = ny * W + nx
+            hw = int((r2 - dy * dy) ** 0.5)
+            x0 = cx - hw if cx - hw > 0 else 0
+            x1 = cx + hw if cx + hw < W - 1 else W - 1
+            if x1 < x0:
+                continue
+            row = ny * W
+            if kind == K_EMPTY:
+                n = x1 - x0 + 1
+                g[row + x0:row + x1 + 1] = bytes(n)
+                aux[row + x0:row + x1 + 1] = bytes(n)
+                continue
+            if simple:
+                for j in range(row + x0, row + x1 + 1):
+                    if REPL[g[j]] and (solid or r() < 0.55):
+                        g[j] = base + int(r() * nv)
+                        aux[j] = 0
+                continue
+            for nx in range(x0, x1 + 1):
+                j = row + nx
                 cur = KIND[g[j]]
-                if kind == K_EMPTY:
-                    self.put(j, K_EMPTY)
+                if kind == K_VIRUS:
+                    # el pincel de virus contagia lo que hay debajo; en el aire
+                    # deja apenas unas esporas
+                    if cur != K_EMPTY and cur not in VIRUS_PROOF:
+                        if r() < 0.35:
+                            self.put(j, K_VIRUS, ri(*VIRUS_LIFE))
+                    elif cur == K_EMPTY and r() < 0.12:
+                        self.put(j, K_VIRUS, ri(*VIRUS_LIFE))
                 elif kind == K_SPARK:
                     # la chispa no se pinta al aire: energiza el cable
                     if cur == K_METAL:
-                        self.g[j] = SP_BASE
-                        self.aux[j] = SPARK_LIFE
+                        g[j] = SP_BASE
+                        aux[j] = SPARK_LIFE
                 elif kind == K_FIRE:
                     if cur == K_POWDER:
                         self.explode(nx, ny)
                     elif cur in FLAMMABLE:
                         self.put(j, K_FIRE, ri(20, 60))
-                    elif cur == K_ICE:  # el pincel de fuego hace de soplete
-                        self.g[j] = W_WARM
-                        self.aux[j] = 0
+                    elif cur == K_ICE or cur == K_SNOW:  # el pincel de fuego hace de soplete
+                        g[j] = W_WARM
+                        aux[j] = 0
                     elif cur == K_EMPTY and r() < 0.35:
                         self.put(j, K_FIRE, ri(15, 40))
-                elif cur in REPLACEABLE:
-                    if solid or r() < 0.55:
-                        self.put(j, kind)
-                self.wake(nx, ny)
+                elif REPL[g[j]] and r() < 0.55:          # agua
+                    self.put(j, kind)
+        cy0 = max(0, cy - rad) >> CHB
+        cy1 = min(SH - 1, cy + rad) >> CHB
+        cx0 = max(0, cx - rad) >> CHB
+        cx1 = min(W - 1, cx + rad) >> CHB
+        for c_y in range(cy0, cy1 + 1):
+            for c_x in range(cx0, cx1 + 1):
+                c = c_y * CW + c_x
+                self.active[c] = 1
+                self.nxt[c] = 1
 
     # --- escena de arranque ---
 
@@ -934,8 +1507,27 @@ class Sim:
                     if 0 <= nx < W and 0 <= ny < SH:
                         self.put(ny * W + nx, kind)
 
-    def demo(self):
+    def _clone(self, x0, x1, y, kind):
+        """una barra de clonador ya cargada con `kind`."""
+        for x in range(x0, x1 + 1):
+            j = y * W + x
+            self.g[j] = CL_BASE + 1
+            self.aux[j] = kind
+
+    def _top(self, x, kind=K_STONE):
+        """la primera fila (de arriba) con `kind` en la columna x, o SH."""
+        for y in range(SH):
+            if KIND[self.g[y * W + x]] == kind:
+                return y
+        return SH
+
+    def demo(self, n=0):
+        """arma la escena n (ver ESCENAS) y despierta todo."""
         self.clear()
+        (self._isla, self._volcan, self._fuegos, self._agujero)[n % len(ESCENAS)]()
+        self.active[:] = b"\x01" * NCHUNK
+
+    def _isla(self):
         # océano
         for y in range(SH - 26, SH):
             for x in range(W):
@@ -962,11 +1554,145 @@ class Sim:
         # meteorito de arena cayendo al océano
         self._blob(210, 30, 13, K_SAND)
         # circuito: cable de metal desde un pulsador hasta la carga de pólvora.
-        # dale chispa (tecla 16 / click en el swatch) al extremo izquierdo
+        # dale chispa (o un rayo) al extremo izquierdo
         self._bar(232, 60, 300, 60, K_METAL, th=2)
         self._bar(300, 60, 300, 96, K_METAL, th=2)
         self._bar(228, 112, 306, 112, K_WOOD)
         self._blob(300, 104, 8, K_POWDER)
+        # y una batería de cohetes en la punta de la repisa, para el rayo
+        for x in range(240, 262, 7):
+            self._blob(x, 108, 2, K_FWORK)
+
+    def _volcan(self):
+        """un volcán en una isla: la cumbre tiene un clonador cargado de lava,
+        así que la erupción no para. la colada baja por las laderas, quema el
+        bosque, derrite la nieve y al llegar al mar hace piedra y vapor. la
+        lava quieta se enfría sola, así que el volcán va creciendo."""
+        cx, pico = 160, SH - 104
+        for y in range(SH - 22, SH):
+            for x in range(W):
+                self.put(y * W + x, K_WATER)
+        for y in range(pico, SH):
+            hw = int((y - pico) * 0.95) + 5
+            for x in range(cx - hw, cx + hw + 1):
+                if 0 <= x < W:
+                    self.put(y * W + x, K_ROCK)
+        # nieve en las laderas altas
+        for x in range(cx - 28, cx + 29):
+            y = self._top(x, K_ROCK)
+            if abs(x - cx) > 7:
+                for dy in (1, 2, 3):
+                    if y - dy >= 0:
+                        self.put((y - dy) * W + x, K_SNOW)
+        # la boca: un clonador de lava en la cumbre, con aire alrededor
+        self._clone(cx - 4, cx + 4, pico, K_LAVA)
+        self._clone(cx - 2, cx + 2, pico - 1, K_LAVA)
+        # bosque en la ladera baja
+        for x in (76, 94, 112, 208, 226, 244):
+            y = self._top(x, K_ROCK)
+            if 0 < y < SH:
+                self.put((y - 1) * W + x, K_SEED)
+
+    def _fuegos(self):
+        """noche de fuegos artificiales: una mecha de planta corre por un
+        canal bajo el suelo y va lanzando las baterías una por una. a la
+        izquierda, un clonador de cohetes los deja caer en un brasero: el show
+        no se termina."""
+        for y in range(SH - 5, SH):
+            for x in range(W):
+                self.put(y * W + x, K_WALL)
+        # la mecha corre tapada (si no, la llama se escapa hacia arriba y se
+        # apaga): planta en el canal, techo de muro con un hueco en cada batería
+        self._bar(14, SH - 6, 310, SH - 6, K_PLANT, th=1)
+        self._bar(14, SH - 7, 310, SH - 7, K_WALL, th=1)
+        xs = list(range(52, 310, 36))
+        for x in xs:
+            for d in (-1, 0, 1):
+                self.put((SH - 7) * W + x + d, K_EMPTY)
+        for x in xs:
+            self._blob(x, SH - 10, 3, K_FWORK)
+        # la lava que la enciende, en una copa a la izquierda
+        self._bar(2, SH - 15, 2, SH - 6, K_WALL, th=2)
+        self._bar(14, SH - 15, 14, SH - 8, K_WALL, th=2)
+        for y in range(SH - 11, SH - 5):
+            for x in range(4, 14):
+                self.put(y * W + x, K_LAVA)
+        # el lanzador eterno: un brasero (clonador de fuego: la lava se enfría,
+        # el fuego clonado no) con un clonador de cohetes metido en la pared,
+        # que sólo puede escupir hacia adentro
+        self._bar(38, 92, 58, 92, K_WALL, th=2)
+        self._bar(38, 76, 38, 93, K_WALL, th=2)
+        self._bar(57, 84, 57, 93, K_WALL, th=2)
+        self._clone(40, 56, 91, K_FIRE)
+        self._clone(39, 39, 80, K_FWORK)
+        # unas estrellas fijas en el cielo (metal: brillan si les cae un rayo)
+        for k in range(18):
+            x, y = (k * 67 + 23) % W, (k * 41 + 9) % 70 + 4
+            if x > 80:
+                self.put(y * W + x, K_METAL)
+
+    def _agujero(self):
+        """un agujero negro y tres chorros que caen: arena, agua y lava. lo
+        que pasa cerca entra girando y desaparece."""
+        cx, cy = 160, SH - 64
+        self._blob(cx, cy, 7, K_BHOLE, force=True)
+        self._clone(142, 146, 2, K_SAND)
+        self._clone(174, 178, 2, K_WATER)
+        self._clone(159, 161, 2, K_LAVA)
+        for x in range(W):
+            self.put((SH - 1) * W + x, K_WALL)
+        # unos planetas de muro, que no se los traga
+        for (px, py, rr) in ((70, 60, 7), (250, 50, 9), (236, 140, 5), (90, 150, 4)):
+            self._blob(px, py, rr, K_WALL, force=True)
+
+
+ESCENAS = ("isla", "volcán", "fuegos", "agujero negro")
+
+
+# --- letra grande (para PAUSA y los avisos) ----------------------------------
+_GLY = {}
+
+
+def _glyph(ch):
+    g = _GLY.get(ch)
+    if g is not None:
+        return g
+    base = _ACUTE.get(ch) or _TILDE.get(ch) or ch
+    img = pyxel.Image(8, 8)
+    img.cls(0)
+    img.text(0, 0, base, 1)
+    runs = []
+    for gy in range(6):
+        gx = 0
+        while gx < 4:
+            if img.pget(gx, gy):
+                s0 = gx
+                while gx < 4 and img.pget(gx, gy):
+                    gx += 1
+                runs.append((s0, gy, gx - s0))
+            else:
+                gx += 1
+    if ch in _ACUTE:
+        runs += [(2, -2, 1), (1, -1, 1)]
+    _GLY[ch] = runs
+    return runs
+
+
+def big(cx, y, s, col, k=2):
+    """texto centrado a k veces, con sombra."""
+    x = int(cx - len(s) * 2 * k)
+    for i, ch in enumerate(s):
+        if ch == " ":
+            continue
+        ox = x + i * 4 * k
+        for gx, gy, w in _glyph(ch):
+            pyxel.rect(ox + gx * k + 1, y + gy * k + 1, w * k, k, UI_SH)
+            pyxel.rect(ox + gx * k, y + gy * k, w * k, k, col)
+
+
+BRUSHES = (1, 2, 4, 7, 11, 16)      # lo que recorre el botón "pincel"
+UNDO_MAX = 12
+SCENE_START = 2                     # arranca con los fuegos artificiales
 
 
 class App:
@@ -977,29 +1703,83 @@ class App:
         pyxel.mouse(True)
         cfg = config.apply()       # pantalla y demás, según el sistema del cabinet
         self.crt = config.crt_level(cfg)
+        self.setup(os.environ.get("POWDER_TEST") == "1")
+        pyxel.run(self.update, self.draw)
+
+    def setup(self, test=False):
+        """todo el estado, aparte de pyxel.init: así se arma en una prueba."""
         self.sim = Sim()
-        self.sim.demo()
+        self.escena = SCENE_START
+        self.sim.demo(self.escena)
         self.tool = 0
+        self.cat = 0
         self.rad = 4
         self.paused = False
-        self.help = True
+        self.menu = False
         self.prev = None
         self.fast = True
         self.fps = 0.0
         self.parts = 0
         self.meter = FpsMeter()
-        self.test = os.environ.get("POWDER_TEST") == "1"
+        self.touch = web.is_touch()
+        self.hist = deque(maxlen=UNDO_MAX)
+        self.toast = None              # [texto, frames]
+        self.brush_t = 0               # frames que se ve la muestra del pincel
+        self.bolt_t = 0
+        self.last = (W // 2, SH // 2)  # dónde se pintó por última vez
+        self.test = test
         # powder es "recreativo": sin puntaje. arranca en una pantalla de título
-        # con el demo vivo detrás; enter entra a la mesa de arena.
+        # con el demo vivo detrás; enter (o tocar) entra a la mesa de arena.
         self.scene = "play" if self.test else "title"
         self.tanim = 0
         web.touch("play" if self.test else "nav")
-        pyxel.run(self.update, self.draw)
 
     def _meter(self):
         self.fps = self.meter.tick()
         if self.meter.updated:
             self.parts = W * SH - self.sim.g.count(0)
+
+    # --- acciones (teclado, botones táctiles y menú hacen lo mismo) ---------
+    def snapshot(self):
+        self.hist.append((bytes(self.sim.g), bytes(self.sim.aux)))
+
+    def undo(self):
+        if not self.hist:
+            self._toast("nada que deshacer")
+            return
+        g, aux = self.hist.pop()
+        self.sim.g[:] = g
+        self.sim.aux[:] = aux
+        self.sim.bursts = []
+        self.sim.active[:] = b"\x01" * NCHUNK
+        self._toast("deshecho  (quedan %d)" % len(self.hist))
+
+    def vaciar(self):
+        self.snapshot()
+        self.sim.clear()
+        self._toast("mesa vacía · deshacer la recupera")
+
+    def escena_sig(self):
+        self.snapshot()
+        self.escena = (self.escena + 1) % len(ESCENAS)
+        self.sim.demo(self.escena)
+        self._toast("escena: " + ESCENAS[self.escena])
+
+    def pincel_sig(self, d=None):
+        if d is None:                   # el botón: recorre los tamaños
+            mas = [b for b in BRUSHES if b > self.rad]
+            self.rad = mas[0] if mas else BRUSHES[0]
+        else:                           # la rueda: de a 2
+            self.rad = max(1, min(20, self.rad + d))
+        self.brush_t = 50
+
+    def elegir(self, n):
+        self.tool = n
+        self.cat = cat_of(n)
+        self._toast(NAMES[TOOLS[n]], 40)
+
+    def _toast(self, s, t=70):
+        self.toast = [s, t]
 
     def update(self):
         if self.test and pyxel.frame_count > 180:
@@ -1009,7 +1789,9 @@ class App:
             pyxel.quit()
         self._meter()
         if pyxel.btnp(pyxel.KEY_ESCAPE):
-            if self.scene == "title":
+            if self.menu:
+                self.menu = False
+            elif self.scene == "title":
                 web.quit()            # desde el título, esc vuelve al emulador
             else:
                 self.scene = "title"  # desde la mesa, esc vuelve al título
@@ -1021,127 +1803,298 @@ class App:
                     or pyxel.btnp(pyxel.MOUSE_BUTTON_LEFT)):
                 self.scene = "play"
                 web.touch("play")
+                self._toast("pinta arriba · elige material abajo", 150)
             self.sim.step()           # el demo sigue vivo detrás del título
+            return
+        if self.toast:
+            self.toast[1] -= 1
+            if self.toast[1] <= 0:
+                self.toast = None
+        if self.brush_t:
+            self.brush_t -= 1
+        self.play_input()
+        if not self.paused:
+            self.sim.step()
+
+    def play_input(self):
+        if pyxel.btnp(pyxel.KEY_H):
+            self.menu = not self.menu
+        if self.menu:
+            self._menu_input()
             return
         keys = (pyxel.KEY_1, pyxel.KEY_2, pyxel.KEY_3, pyxel.KEY_4, pyxel.KEY_5,
                 pyxel.KEY_6, pyxel.KEY_7, pyxel.KEY_8, pyxel.KEY_9)
         for n, key in enumerate(keys):
             if pyxel.btnp(key):
-                self.tool = n
+                self.elegir(n)
         if pyxel.btnp(pyxel.KEY_0):
-            self.tool = len(TOOLS) - 1
+            self.elegir(len(TOOLS) - 1)
         if pyxel.btnp(pyxel.KEY_TAB):
-            self.tool = (self.tool + 1) % len(TOOLS)
+            self.elegir((self.tool + 1) % len(TOOLS))
         if pyxel.btnp(pyxel.KEY_SPACE):
             self.paused = not self.paused
-        if pyxel.btnp(pyxel.KEY_H):
-            self.help = not self.help
         if pyxel.btnp(pyxel.KEY_R):
-            self.sim.demo()
+            self.escena_sig()
         if pyxel.btnp(pyxel.KEY_C):
-            self.sim.clear()
+            self.vaciar()
+        if pyxel.btnp(pyxel.KEY_X) or pyxel.btnp(pyxel.KEY_U):
+            self.undo()
+        if pyxel.btnp(pyxel.KEY_Z):
+            self.pincel_sig()
         if pyxel.mouse_wheel:
-            self.rad = max(1, min(20, self.rad + (2 if pyxel.mouse_wheel > 0 else -2)))
+            self.pincel_sig(2 if pyxel.mouse_wheel > 0 else -2)
 
         mx, my = pyxel.mouse_x, pyxel.mouse_y
         left = pyxel.btn(pyxel.MOUSE_BUTTON_LEFT)
         right = pyxel.btn(pyxel.MOUSE_BUTTON_RIGHT)
+        press = pyxel.btnp(pyxel.MOUSE_BUTTON_LEFT) or pyxel.btnp(pyxel.MOUSE_BUTTON_RIGHT)
         if pyxel.btnp(pyxel.MOUSE_BUTTON_LEFT) and my >= SH:
-            idx = tool_at(mx, my)
-            if idx >= 0:
-                self.tool = idx
+            hit = tool_at(mx, my, self.cat)
+            if hit and hit[0] == "tab":
+                self.cat = hit[1]
+                ks = CATS[self.cat][1]
+                if len(ks) == 1 or TOOLS[self.tool] in ks:
+                    self.elegir(TOOLS.index(ks[0]) if len(ks) == 1 else self.tool)
+            elif hit:
+                self.elegir(hit[1])
             self.prev = None
-        elif (left or right) and my < SH:
-            self.help = False
+        elif (left or right) and my < SH and (self.prev is not None or press):
             kind = K_EMPTY if right else TOOLS[self.tool]
             x1 = max(0, min(W - 1, mx))
             y1 = max(0, min(SH - 1, my))
-            x0, y0 = self.prev if self.prev else (x1, y1)
-            steps = max(abs(x1 - x0), abs(y1 - y0), 1)
-            for s in range(steps + 1):
-                self.sim.paint(x0 + (x1 - x0) * s // steps,
-                               y0 + (y1 - y0) * s // steps, kind, self.rad)
-            self.prev = (x1, y1)
+            if press:
+                self.snapshot()           # cada trazo se puede deshacer
+            if kind == K_PLASMA:
+                # el rayo no se pinta: cae. uno al tocar y otro cada tanto si
+                # se mantiene apretado
+                if press or self.bolt_t <= 0:
+                    self.sim.bolt(x1, y1)
+                    self.bolt_t = 14
+                self.bolt_t -= 1
+                self.prev = (x1, y1)
+            else:
+                x0, y0 = self.prev if self.prev else (x1, y1)
+                # un sello cada medio radio, no cada píxel: con el pincel de 16
+                # un trazo rápido eran 11 sellos de 1.000 celdas en un frame
+                steps = max(1, max(abs(x1 - x0), abs(y1 - y0)) // max(1, self.rad // 2))
+                for st in range(steps + 1):
+                    self.sim.paint(x0 + (x1 - x0) * st // steps,
+                                   y0 + (y1 - y0) * st // steps, kind, self.rad)
+                self.prev = (x1, y1)
+            self.last = (x1, y1)
         else:
             self.prev = None
 
-        if not self.paused:
-            self.sim.step()
+    # --- el menú (botón "menú" o tecla h) ----------------------------------
+    MENU_W, MENU_BTN_H, MENU_Y = 232, 20, 10
 
+    def _menu_btns(self):
+        bx = W // 2 - self.MENU_W // 2
+        y0 = self.MENU_Y - 2
+        labels = (("seguir", "seguir"),
+                  ("vaciar", "vaciar la mesa"),
+                  ("escena", "escena: %s  >" % ESCENAS[(self.escena + 1) % len(ESCENAS)]),
+                  ("pausa", "reanudar" if self.paused else "pausar"))
+        return [(key, lab, bx + 16, y0 + 22 + n * (self.MENU_BTN_H + 4),
+                 self.MENU_W - 32, self.MENU_BTN_H) for n, (key, lab) in enumerate(labels)]
+
+    def _menu_input(self):
+        if pyxel.btnp(pyxel.KEY_C):
+            self.vaciar()
+            self.menu = False
+        if pyxel.btnp(pyxel.KEY_R):
+            self.escena_sig()
+            self.menu = False
+        if pyxel.btnp(pyxel.KEY_SPACE) or pyxel.btnp(pyxel.KEY_RETURN):
+            self.menu = False
+        if pyxel.btnp(pyxel.MOUSE_BUTTON_LEFT):
+            mx, my = pyxel.mouse_x, pyxel.mouse_y
+            for key, _, x, y, w, h in self._menu_btns():
+                if x <= mx < x + w and y <= my < y + h:
+                    if key == "vaciar":
+                        self.vaciar()
+                    elif key == "escena":
+                        self.escena_sig()
+                    elif key == "pausa":
+                        self.paused = not self.paused
+                    self.menu = False
+                    return
+        self.prev = None
+
+    # --- dibujo ------------------------------------------------------------
     def draw(self):
         if self.fast:
             self.fast = fast_blit(self.sim.g, W * SH)
         if not self.fast:
             pyxel.cls(0)
             blit_slow(self.sim.g, W, SH)
+        if self.sim.flash:                 # el fogonazo del rayo
+            fx.flash(UI_TXT, 0.10 * self.sim.flash, 0, 0, W, SH)
+            self.sim.flash -= 1
 
-        pyxel.rect(0, SH, W, UI_H, UI_BG)
-        pyxel.rect(0, SH, W, 1, UI_LINE)
-        mx, my = pyxel.mouse_x, pyxel.mouse_y
-        hover = tool_at(mx, my)
-        for n, kind in enumerate(TOOLS):
-            sx, sy = tool_box(n)
-            if kind == K_EMPTY:
-                pyxel.rectb(sx, sy, 13, 13, UI_DIM)
-                pyxel.text(sx + 5, sy + 4, "x", UI_DIM)
-            else:
-                b, nv = BASE[kind], NVAR[kind]
-                for row in range(13):
-                    pyxel.rect(sx, sy + row, 13, 1, b + (row * nv // 13))
-            if n == self.tool:
-                pyxel.rectb(sx - 2, sy - 2, 17, 17, UI_HI)
-            elif n == hover:
-                pyxel.rectb(sx - 1, sy - 1, 15, 15, UI_DIM)
-            # el nombre, siempre: es lo que hace que la barra se lea de un vistazo
-            nombre = NAMES[kind]
-            col = UI_HI if n == self.tool else (UI_TXT if n == hover else UI_DIM)
-            cx = n % TOOL_COLS * TOOL_CW + TOOL_CW // 2
-            pxtext(int(cx - len(nombre) * 2), sy + 14, nombre, col)
-
-        y = SH + 2 * TOOL_ROW_H + 6
-        pyxel.rect(0, y - 2, W, 1, UI_LINE)
-        pxtext(4, y + 1, "pincel %d" % self.rad, UI_DIM)
-        pyxel.text(W - 60, y + 1, "%3.0f fps" % self.fps, UI_DIM)
-
-        if self.paused:
-            pyxel.text(W - 28, 4, "PAUSA", UI_HI)
-        if 0 <= my < SH:
-            pyxel.circb(mx, my, self.rad, UI_TXT)
-
-        if self.help and self.scene == "play":
-            bx, by, bw = 14, 46, 168
-            lines = ("click izq pinta / der borra",
-                     "rueda: grosor del pincel",
-                     "1-0 o tab: material",
-                     "espacio: pausa    r: escena",
-                     "c: vaciar  h: ayuda  esc: título")
-            bh = 20 + len(lines) * 8
-            pyxel.rect(bx, by, bw, bh, UI_BG)
-            pyxel.rectb(bx, by, bw, bh, UI_LINE)
-            pyxel.text(bx + 8, by + 7, "P O W D E R", UI_HI)
-            for n, s in enumerate(lines):
-                pyxel.text(bx + 8, by + 19 + n * 8, s, UI_TXT)
-
+        self._barra()
         if self.scene == "title":
             self._title_card()
-
+        else:
+            mx, my = pyxel.mouse_x, pyxel.mouse_y
+            self._chip(mx, my)
+            if 0 <= my < SH and not self.menu and (not self.touch or
+                                                   pyxel.btn(pyxel.MOUSE_BUTTON_LEFT)):
+                if TOOLS[self.tool] == K_PLASMA:
+                    pyxel.line(mx - 3, my, mx + 3, my, UI_HI)
+                    pyxel.line(mx, my - 3, mx, my + 3, UI_HI)
+                else:
+                    pyxel.circb(mx, my, self.rad, UI_TXT)
+            if self.brush_t:
+                cx, cy = W // 2, SH // 2
+                pyxel.circ(cx, cy, self.rad, UI_SH)
+                pyxel.circb(cx, cy, self.rad, UI_HI)
+                big(cx, cy + self.rad + 5, "PINCEL %d" % self.rad, UI_HI)
+            if self.paused and not self.menu:
+                big(W // 2, 22, "PAUSA", UI_HI, 3)
+                ctext(W // 2, 44, "toca pausa para seguir" if self.touch
+                      else "espacio para seguir", UI_TXT)
+            if self.toast and not self.menu:
+                s, t = self.toast
+                if t > 8 or (pyxel.frame_count // 2) % 2:
+                    w = len(s) * 4 + 12
+                    y = SH - 16
+                    pyxel.rect(W // 2 - w // 2, y, w, 11, UI_SH)
+                    pyxel.rectb(W // 2 - w // 2, y, w, 11, UI_LINE)
+                    ctext(W // 2, y + 3, s, UI_TXT)
+            if self.menu:
+                self._menu_draw()
         crt.apply(self.crt)        # el vidrio del cabinet, al final de todo
+
+    def _swatch(self, x, y, w, h, kind, sel=False):
+        if kind == K_EMPTY:
+            pyxel.rect(x, y, w, h, 0)
+            pyxel.rectb(x, y, w, h, UI_DIM)
+            pyxel.line(x + 3, y + 2, x + w - 4, y + h - 3, LAB_RED)
+            pyxel.line(x + 3, y + h - 3, x + w - 4, y + 2, LAB_RED)
+            return
+        if kind == K_PLASMA:
+            pyxel.rect(x, y, w, h, 0)
+            mx = x + w // 2
+            pts = ((mx + 3, y + 1), (mx - 2, y + h // 2), (mx + 2, y + h // 2),
+                   (mx - 3, y + h - 2))
+            for a, b in zip(pts, pts[1:]):
+                pyxel.line(a[0], a[1], b[0], b[1], PL_BASE + 2)
+            return
+        if kind == K_BHOLE:
+            pyxel.rect(x, y, w, h, 0)
+            pyxel.circ(x + w // 2, y + h // 2, h // 2 - 1, BH_BASE + 3)
+            pyxel.circ(x + w // 2, y + h // 2, h // 2 - 3, 0)
+            return
+        if kind == K_FWORK:
+            pyxel.rect(x, y, w, h, 0)
+            for n, c in enumerate(FW_COLORS[:4]):
+                pyxel.circ(x + 6 + n * (w - 12) // 3, y + h // 2, 2, EM_BASE + n * 4)
+            return
+        b, nv = BASE[kind], NVAR[kind]
+        if kind == K_FIRE:
+            b, nv = BASE[kind] + 1, 6
+        if kind == K_CLONE:
+            b, nv = CL_BASE + 1, 2
+        for n in range(nv):
+            y0 = y + n * h // nv
+            y1 = y + (n + 1) * h // nv
+            pyxel.rect(x, y0, w, y1 - y0, b + n)
+
+    def _barra(self):
+        pyxel.rect(0, SH, W, UI_H, UI_BG)
+        # pestañas
+        for c, (nom, ks) in enumerate(CATS):
+            x = c * TAB_W
+            abierta = c == self.cat
+            pyxel.rect(x, SH, TAB_W - 1, TAB_H, UI_TAB if abierta else UI_BG)
+            col = (LAB_RED if ks[0] == K_EMPTY else
+                   BASE[ks[0]] + NVAR[ks[0]] // 2)
+            pyxel.rect(x, SH, TAB_W - 1, 2, col if abierta else UI_LINE)
+            pyxel.rect(x + 5, SH + 6, 5, 5, col)
+            tiene = TOOLS[self.tool] in ks
+            pxtext(x + 14, SH + 6, nom, UI_HI if tiene else
+                   (UI_TXT if abierta else UI_DIM))
+        pyxel.rect(0, SH + TAB_H - 1, W, 1, UI_LINE)
+        # las casillas de la pestaña abierta
+        for n, kind in enumerate(CATS[self.cat][1]):
+            x, y, w, h = cell_box(n)
+            sel = TOOLS[self.tool] == kind
+            pyxel.rect(x, y, w, h, UI_TAB if sel else UI_BG)
+            self._swatch(x + 4, y + 3, w - 8, 14, kind)
+            nombre = SHORT[kind]
+            pxtext(int(x + w / 2 - len(nombre) * 2), y + 21, nombre,
+                   UI_HI if sel else UI_TXT)
+            if sel:
+                pyxel.rectb(x, y, w, h, UI_HI)
+                pyxel.rectb(x + 1, y + 1, w - 2, h - 2, UI_HI)
+        if CATS[self.cat][1] == (K_EMPTY,):
+            pxtext(64, SH + TAB_H + 9, "arrastra para borrar", UI_TXT)
+            pxtext(64, SH + TAB_H + 18, "(clic derecho también borra)" if not self.touch
+                   else "deshacer recupera lo borrado", UI_DIM)
+
+    def _chip(self, mx, my):
+        """qué tienes en la mano: material y pincel, siempre a la vista."""
+        kind = TOOLS[self.tool]
+        nom = NAMES[kind]
+        s = "%s · %s" % (nom, "toca donde cae" if kind == K_PLASMA
+                         else "pincel %d" % self.rad)
+        w = len(s) * 4 + 20
+        x = 2
+        if mx < w + 8 and my < 20:
+            x = W - w - 2                 # se corre si el dedo está encima
+        pyxel.rect(x, 2, w, 12, UI_SH)
+        pyxel.rectb(x, 2, w, 12, UI_LINE)
+        self._swatch(x + 2, 4, 9, 8, kind)
+        pxtext(x + 14, 5, s, UI_TXT)
+        # el tamaño del pincel en chico, a la derecha del chip
+        if kind != K_PLASMA:
+            rr = min(5, max(1, self.rad // 3))
+            pyxel.circb(x + w + 8, 8, rr, UI_HI)
+
+    def _menu_draw(self):
+        bw = self.MENU_W
+        bx = W // 2 - bw // 2
+        bh = 160
+        by = self.MENU_Y
+        pyxel.rect(bx + 3, by + 3, bw, bh, UI_SH)
+        pyxel.rect(bx, by, bw, bh, UI_BG)
+        pyxel.rectb(bx, by, bw, bh, UI_LINE)
+        ctext(W // 2, by + 8, "P O W D E R", UI_HI)
+        for key, lab, x, y, w, h in self._menu_btns():
+            pyxel.rect(x, y, w, h, UI_TAB)
+            pyxel.rectb(x, y, w, h, UI_HI if key == "seguir" else UI_LINE)
+            ctext(x + w // 2, y + 7, lab, UI_TXT)
+        y = by + 122
+        if self.touch:
+            lines = ("pinta arriba · elige el material abajo",
+                     "pincel cambia el grosor · deshacer vuelve atrás",
+                     "%d partículas · %.0f fps" % (self.parts, self.fps))
+        else:
+            lines = ("izq pinta · der borra · rueda o z: pincel",
+                     "x deshace · 1-0 o tab material · espacio pausa",
+                     "c vacía · r escena · h menú · esc título",
+                     "%d partículas · %.0f fps" % (self.parts, self.fps))
+        for n, l in enumerate(lines):
+            ctext(W // 2, y + n * 8, l, UI_DIM)
 
     def _title_card(self):
         cx = W // 2
-        bw, bh = 214, 92
-        bx, by = cx - bw // 2, 42
-        pyxel.rect(bx + 3, by + 3, bw, bh, 0)
+        bw, bh = 236, 96
+        bx, by = cx - bw // 2, 34
+        pyxel.rect(bx + 3, by + 3, bw, bh, UI_SH)
         pyxel.rect(bx, by, bw, bh, UI_BG)
         pyxel.rectb(bx, by, bw, bh, UI_LINE)
-        ctext(cx, by + 12, "P O W D E R", UI_HI)
-        ctext(cx, by + 26, "recreativo · mesa de arena", BASE[K_LEAF] + 3)
-        for n, s in enumerate(("17 materiales que caen, arden y salpican",
-                               "click pinta · rueda pincel · tab material",
-                               "espacio pausa · esc vuelve al título")):
-            ctext(cx, by + 42 + n * 9, s, UI_TXT)
+        big(cx, by + 9, "POWDER", UI_HI, 3)
+        ctext(cx, by + 32, "recreativo · mesa de arena", BASE[K_LEAF] + 3)
+        for n, s in enumerate(("23 materiales: cohetes, virus, rayos,",
+                               "clonador y un agujero negro",
+                               "pinta con el dedo · elige abajo" if self.touch
+                               else "click pinta · rueda pincel · x deshace")):
+            ctext(cx, by + 46 + n * 9, s, UI_TXT)
         if (self.tanim // 20) % 2 == 0:
-            ctext(cx, by + bh - 14, "enter para entrar", UI_HI)
+            ctext(cx, by + bh - 13, "toca para entrar" if self.touch
+                  else "enter para entrar", UI_HI)
 
 
 if __name__ == "__main__":

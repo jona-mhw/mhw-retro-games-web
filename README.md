@@ -5,9 +5,33 @@ jugable en el navegador.
 
 **▶ jugar: https://jona-mhw.github.io/mhw-retro-games-web/**
 
-los mismos 8 juegos en Python + [pyxel](https://github.com/kitao/pyxel), sin
+9 juegos en Python + [pyxel](https://github.com/kitao/pyxel), sin
 reescribirlos: corren en el navegador con Pyxel Web (Python en WebAssembly vía
 Pyodide). la primera carga baja el runtime (~10 MB) y después queda en caché.
+
+## los juegos
+
+- **neón** *(nuevo)* — shoot'em up vertical synthwave, el único en formato
+  parado: llena el celular. se mueve con el trackpad y dispara solo; roces que
+  pagan, cadena hasta x8, el mini-jefe CENTINELA y el jefe final OCASO-85.
+- **asteroides** — oleadas anunciadas, minas en cadena, cometas, auto-fuego,
+  poderes y una tormenta final.
+- **autos** — atraco top-down: misiones, búsqueda de 5 estrellas con bloqueos y
+  helicóptero, derrapes, rampas y el banco.
+- **bloques** — tetris blitz que se juega con el dedo sobre el tablero: pieza
+  dorada, fiebre final y carteles grandes.
+- **cruzar** — cada cruce es un tramo nuevo: barrio, avenida, vía del tren, río
+  y autopista.
+- **culebra** — snake con hambre: ratón que huye, arañas, frenesí final y
+  escenarios por nivel.
+- **esquiva** — munición que se recarga sola, rayos, buscadores, muros y el
+  jefe NÚCLEO.
+- **pong** — SMASH, jefes de muro y tres personalidades de la máquina.
+- **powder** — la mesa de arena, recreativa, con materiales por pestañas.
+
+todas las partidas (menos powder) duran menos de dos minutos, arrancan con
+una cuenta **3-2-1-¡YA!** y se pueden **pausar** (⏸ en la barra, esc o p; se
+pausa sola si cambias de app).
 
 ## pensado para el celular
 
@@ -21,7 +45,9 @@ Pyodide). la primera carga baja el runtime (~10 MB) y después queda en caché.
   esquiva, arrastrar el dedo; en powder se pinta con el dedo.
 - **en vertical** el juego va arriba y los controles abajo; **acostado**, el
   juego al centro y los controles a los costados.
-- **menú**: un toque elige el juego (y muestra su ficha y récord), otro lo lanza.
+- **trackpad**: en neón, esquiva y pong el dedo se arrastra en la zona de
+  controles y la nave se mueve arriba, sin taparla.
+- **menú**: en el celular parado es vertical, con filas grandes. un toque elige el juego (y muestra su ficha y récord), otro lo lanza.
 - **pantalla completa**: el botón ⛶ (android). en iphone: compartir →
   *agregar a inicio*, y se abre como app, sin barras.
 - cambiar de juego **no recarga la página**: pyxel se reinicia con el cartucho nuevo.

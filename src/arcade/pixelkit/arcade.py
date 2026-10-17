@@ -353,14 +353,16 @@ class Cabinet:
         t = (self.anim % COUNT_STEP) / COUNT_STEP          # 0 -> 1 dentro del número
         scale = 6 if t < 0.15 else 5                       # golpe al aparecer
         col = (u.warn, u.accent, u.text)[max(0, min(2, 3 - n))]
-        _big_text(self.w / 2, self.h / 2, str(n), col, scale, u.shadow)
-        ctext(self.w / 2, self.h / 2 + 26, "¡prepárate!", u.dim)
+        # va en el tercio de arriba: al medio suelen estar los carteles de
+        # entrada de cada juego ("¡DESPEGUE!", "OLEADA 1") y se pisaban
+        _big_text(self.w / 2, self.h * 0.3, str(n), col, scale, u.shadow)
+        ctext(self.w / 2, self.h * 0.3 + 24, "¡prepárate!", u.text)
 
     def _draw_go(self):
         u = self.ui
         k = self.go / GO_FRAMES                            # 1 -> 0
         if self.go % 6 < 4 or k < 0.5:
-            _big_text(self.w / 2, self.h / 2, "¡YA!", u.accent, 3 + int(3 * k), u.shadow)
+            _big_text(self.w / 2, self.h * 0.3, "¡YA!", u.accent, 3 + int(3 * k), u.shadow)
 
     def _draw_pause(self):
         u, cx = self.ui, self.w / 2
