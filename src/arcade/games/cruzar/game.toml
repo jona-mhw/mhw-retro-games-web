@@ -5,13 +5,13 @@ author   = "Jona"
 year     = 2026
 width    = 240
 height   = 208
-blurb    = "tráfico abajo, cintas arriba, y cada cruce acelera la calle: juntá monedas al pasar"
-controls = "flechas o wasd mueven · esc salir"
+blurb    = "salta entre autos, motos, trenes y troncos: cada cruce es un tramo nuevo y más rápido"
+controls = "flechas o wasd saltan · esc salir"
 
 # controles táctiles (celular): los dibuja index.html bajo la pantalla.
 # pad: "4" cruceta, "lr" izq/der, "ud" arriba/abajo, "none" sin pad.
 # buttons: [nombre, tecla]; la tecla es la del teclado que el botón aprieta.
 [game.touch]
 pad     = "4"
-swipe   = true                  # deslizar sobre la pantalla también salta
-hint    = "o desliza el dedo sobre la pantalla"
+swipe   = "once"               # deslizar salta: un salto por gesto
+hint    = "o desliza sobre el juego para saltar"

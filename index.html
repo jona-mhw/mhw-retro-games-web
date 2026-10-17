@@ -299,7 +299,7 @@
     }
 
     // deslizar sobre la pantalla = un toque de flecha (culebra, cruzar)
-    let swipeOn = false, swipeFrom = null;
+    let swipeOn = false, swipeOnce = false, swipeFrom = null;
     const swipeHeld = {};          // dirección -> timer del keyup pendiente
     const screenEl = document.getElementById("pyxel-screen");
     screenEl.addEventListener("pointerdown", e => { swipeFrom = [e.clientX, e.clientY]; });
@@ -313,7 +313,9 @@
       if (swipeHeld[dir]) { clearTimeout(swipeHeld[dir]); swipeHeld[dir] = 0; release(dir); }
       press(dir);
       swipeHeld[dir] = setTimeout(() => { swipeHeld[dir] = 0; release(dir); }, 60);
-      swipeFrom = [e.clientX, e.clientY];        // permite encadenar giros
+      // por defecto un gesto largo encadena giros (culebra); con
+      // swipe = "once" es un salto por gesto (cruzar)
+      swipeFrom = swipeOnce ? null : [e.clientX, e.clientY];
     });
     screenEl.addEventListener("pointerup", () => { swipeFrom = null; });
 
@@ -358,6 +360,7 @@
       document.getElementById("clusters").classList.toggle("nopad", !spec.pad || spec.pad === "none");
       document.getElementById("clusters").classList.toggle("drag", spec.pad === "drag");
       swipeOn = !!spec.swipe;
+      swipeOnce = spec.swipe === "once";
       document.getElementById("hint").textContent = spec.hint || "";
       document.getElementById("back").textContent =
         { play: "⏸ pausa", pause: "◀ título" }[spec.scene] || "◀ volver";

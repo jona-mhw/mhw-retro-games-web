@@ -5,12 +5,13 @@ author   = "Jona"
 year     = 2026
 width    = 220
 height   = 170
-blurb    = "90 segundos contra la máquina: pegale con efecto, apuntá a las cajas y sostené la racha"
-controls = "mouse o flechas mueven · esc salir"
+blurb    = "90 segundos contra la máquina: pégale con efecto, carga el smash y derriba cada muro"
+controls = "mouse o flechas mueven · espacio o clic: smash · esc salir"
 
 # controles táctiles (celular): los dibuja index.html bajo la pantalla.
-# pad: "4" cruceta, "lr" izq/der, "ud" arriba/abajo, "none" sin pad.
+# pad: "4" cruceta, "lr" izq/der, "ud" arriba/abajo, "drag" trackpad, "none" sin pad.
 # buttons: [nombre, tecla]; la tecla es la del teclado que el botón aprieta.
 [game.touch]
-pad     = "ud"
-hint    = "o arrastra el dedo sobre la cancha"
+pad     = "drag"                # trackpad: el dedo no tapa la cancha
+buttons = [["SMASH", "space"]]
+hint    = "arrastra en el panel · SMASH al pegar"

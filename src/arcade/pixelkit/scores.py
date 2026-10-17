@@ -33,14 +33,16 @@ DEFAULTS = {
     # pong sube un escalón por la racha (+10 cada 10 devoluciones seguidas):
     # el jugador perfecto simulado la cobra entera (+50) y hace 230-500 con el
     # muro. estos siguen siendo un piso para un humano, no una medición.
-    "pong":    [("CPU", 60), ("ACE", 35), ("NET", 15)],
+    # pong y cruzar se recalibraron con el rediseño (smash, jefes de muro,
+    # tramos con tren y río) contra bots flojos, medios y buenos.
+    "pong":    [("CPU", 600), ("ACE", 350), ("NET", 150)],
     # esquiva y asteroides cambiaron de escala con oleadas, jefe y frenesí:
     # calibrados con bots de lógica pura, por debajo de su mediana.
     "esquiva": [("DGE", 900), ("RUN", 450), ("HOP", 180)],
     "asteroides": [("VEC", 25000), ("ORB", 12000), ("AST", 5000)],
     # cruzar quedó de piso: el bot espera de más para elegir hueco y sólo logró
     # 3-6 cruces en 90 s. un humano lee el tráfico mucho mejor que esa heurística
-    "cruzar":  [("HOP", 1200), ("RAN", 700), ("PIE", 300)],
+    "cruzar":  [("HOP", 3500), ("RAN", 1800), ("PIE", 700)],
     # autos es el único que no se pudo medir bien: los bots manejan mal por una
     # ciudad con manzanas y ninguno sabe escaparse de la policía. la mediana de
     # un bot con gps quedó en $300 y su mejor corrida en $1.144, así que estos
