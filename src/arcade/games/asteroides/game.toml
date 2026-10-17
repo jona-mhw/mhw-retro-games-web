@@ -1,0 +1,9 @@
+# manifiesto del juego. el id es el nombre de la carpeta (games/asteroides).
+[game]
+title    = "Asteroides"
+author   = "Jona"
+year     = 2026
+width    = 256
+height   = 208
+blurb    = "vectores e inercia: las piedras se parten, las seguidas hacen combo y la dorada se escapa"
+controls = "izq/der giran · arriba empuja · espacio dispara · abajo frena"

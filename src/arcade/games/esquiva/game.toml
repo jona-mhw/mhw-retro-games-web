@@ -1,0 +1,9 @@
+# manifiesto del juego. el id es el nombre de la carpeta (games/esquiva).
+[game]
+title    = "Esquiva"
+author   = "Jona"
+year     = 2026
+width    = 200
+height   = 220
+blurb    = "aguantá 100 segundos: gemas en cadena, rozar paga y la munición se cuenta"
+controls = "mouse o flechas mueven · espacio dispara · esc salir"

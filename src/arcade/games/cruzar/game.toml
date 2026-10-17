@@ -1,0 +1,9 @@
+# manifiesto del juego. el id es el nombre de la carpeta (games/cruzar).
+[game]
+title    = "Cruzar"
+author   = "Jona"
+year     = 2026
+width    = 240
+height   = 208
+blurb    = "tráfico abajo, cintas arriba, y cada cruce acelera la calle: juntá monedas al pasar"
+controls = "flechas o wasd mueven · esc salir"

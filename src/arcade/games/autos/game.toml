@@ -1,0 +1,9 @@
+# manifiesto del juego. el id es el nombre de la carpeta (games/autos).
+[game]
+title    = "Autos"
+author   = "Jona"
+year     = 2026
+width    = 384
+height   = 288
+blurb    = "gta 2 en 90 segundos: levantá fajos, esquivá patrullas y pasá por el banco a guardarlos"
+controls = "flechas o wasd manejan · esc salir"

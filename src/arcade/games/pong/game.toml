@@ -1,0 +1,9 @@
+# manifiesto del juego. el id es el nombre de la carpeta (games/pong).
+[game]
+title    = "Pong"
+author   = "Jona"
+year     = 2026
+width    = 220
+height   = 170
+blurb    = "90 segundos contra la máquina: pegale con efecto, apuntá a las cajas y sostené la racha"
+controls = "mouse o flechas mueven · esc salir"

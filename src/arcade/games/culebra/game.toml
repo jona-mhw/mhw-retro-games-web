@@ -1,0 +1,9 @@
+# manifiesto del juego. el id es el nombre de la carpeta (games/culebra).
+[game]
+title    = "Culebra"
+author   = "Jona"
+year     = 2026
+width    = 256
+height   = 224
+blurb    = "el snake con hambre: manzanas seguidas hacen racha, la dorada vale por cinco y el ají te acelera"
+controls = "flechas o wasd mueven · esc salir"

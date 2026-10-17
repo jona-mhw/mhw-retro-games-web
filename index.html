@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+  <title>MHW · RETRO · FUTURE</title>
+  <meta name="description" content="un cabinet de juegos pixel art hechos con pyxel, jugable en el navegador">
+  <meta name="theme-color" content="#0B0A16">
+  <style>
+    html, body { margin: 0; height: 100%; background: #0B0A16; overflow: hidden; }
+    #boot {
+      position: fixed; inset: 0; display: flex; flex-direction: column;
+      align-items: center; justify-content: center; gap: 14px; z-index: 10;
+      color: #38E8E0; background: #0B0A16; pointer-events: none;
+      font: 14px/1.4 ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+      letter-spacing: .35em; text-align: center; padding: 0 16px;
+    }
+    #boot small { color: #6E6499; letter-spacing: .1em; }
+    #boot.gone { display: none; }
+  </style>
+  <script src="https://cdn.jsdelivr.net/gh/kitao/pyxel@v2.9.9/wasm/pyxel.js"></script>
+</head>
+<body>
+  <div id="boot">
+    <div>M H W &nbsp; R E T R O &nbsp; F U T U R E</div>
+    <small id="boot-msg">cargando el cabinet…</small>
+  </div>
+  <script>
+    // pyxel web pide un clic antes de arrancar (por el audio). el cabinet no
+    // tiene sonido y cada juego es una recarga de esta página, así que el
+    // "click to start" se salta solo: así elegir un juego en el menú lo
+    // bootea directo, como un cartucho.
+    const autoStart = setInterval(() => {
+      const ctx = window.pyxelContext;
+      if (ctx && ctx.resolveInput) {
+        ctx.resolveInput();
+        clearInterval(autoStart);
+        document.getElementById("boot").classList.add("gone");
+      }
+    }, 50);
+
+    const game = new URLSearchParams(location.search).get("game");
+    if (game) {
+      document.getElementById("boot-msg").textContent = "insertando cartucho: " + game + "…";
+    }
+
+    launchPyxel({ command: "play", name: "arcade.pyxapp", gamepad: "enabled" });
+  </script>
+</body>
+</html>

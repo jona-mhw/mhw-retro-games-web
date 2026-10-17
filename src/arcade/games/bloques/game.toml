@@ -1,0 +1,9 @@
+# manifiesto del juego. el id es el nombre de la carpeta (games/bloques).
+[game]
+title    = "Bloques"
+author   = "Jona"
+year     = 2026
+width    = 220
+height   = 220
+blurb    = "tetris blitz: 100 segundos, tres próximas, hold, combos, tetris seguidos y perfect clear"
+controls = "flechas · arriba gira · espacio cae · c guarda · z ítem · esc salir"

@@ -1,0 +1,11 @@
+# manifiesto del juego. el emulador lo lee para el menú y los créditos.
+# el id del juego es el nombre de la carpeta (games/powder), no va acá.
+[game]
+module   = "games.powder"
+title    = "Powder"
+author   = "Jona"
+year     = 2026
+width    = 320
+height   = 240
+blurb    = "17 materiales que caen, arden, fluyen, salpican y hacen circuitos"
+controls = "click pinta · rueda pincel · 1-0 material · espacio pausa · esc salir"
