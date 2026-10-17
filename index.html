@@ -93,6 +93,17 @@
     .pad.lr { grid-template: 76px / 84px 84px; gap: 8px; }
     .pad.ud { grid-template: 72px 72px / 96px; gap: 8px; }
 
+    /* el trackpad: se arrastra acá abajo y la nave se mueve allá arriba, sin
+       que el dedo tape el juego (como los shooters de celular) */
+    #clusters.drag #left { flex: 1; align-self: stretch; }
+    .trackpad {
+      flex: 1; align-self: stretch; min-height: 120px; border-radius: 18px;
+      border: 2px dashed var(--line); background: rgba(36, 27, 68, .45);
+      display: flex; align-items: center; justify-content: center;
+      color: var(--dim); font-size: 11px; letter-spacing: .15em; text-align: center;
+    }
+    .trackpad.down { border-color: var(--acc); color: var(--acc); }
+
     body.touch #bar { display: flex; }
     body.touch #controls { display: flex; }
 
@@ -257,6 +268,36 @@
       return pad;
     }
 
+    // el trackpad: junta cuánto se arrastró (en píxeles del juego) hasta que
+    // pixelkit.web.drag() lo pide. es movimiento relativo: no importa dónde
+    // se apoye el dedo, importa cuánto se mueve.
+    let dragAcc = [0, 0];
+    window.mhwDrag = () => { const r = dragAcc; dragAcc = [0, 0]; return r[0].toFixed(2) + "," + r[1].toFixed(2); };
+    function makeTrackpad() {
+      const el = document.createElement("div");
+      el.className = "trackpad";
+      el.textContent = "arrastra aquí";
+      let last = null;
+      el.addEventListener("pointerdown", e => {
+        e.preventDefault(); el.setPointerCapture(e.pointerId);
+        last = [e.clientX, e.clientY]; el.classList.add("down");
+      });
+      el.addEventListener("pointermove", e => {
+        if (!last) return;
+        // cuántos píxeles del juego vale un píxel de pantalla, con algo de
+        // ganancia para cruzar la pantalla sin levantar el dedo
+        const r = screenEl.getBoundingClientRect();
+        const drawn = Math.min(r.width, r.height * screenSize.w / screenSize.h);
+        const k = 1.6 * screenSize.w / Math.max(1, drawn);
+        dragAcc[0] += (e.clientX - last[0]) * k;
+        dragAcc[1] += (e.clientY - last[1]) * k;
+        last = [e.clientX, e.clientY];
+      });
+      const up = () => { last = null; el.classList.remove("down"); };
+      for (const t of ["pointerup", "pointercancel", "lostpointercapture"]) el.addEventListener(t, up);
+      return el;
+    }
+
     // deslizar sobre la pantalla = un toque de flecha (culebra, cruzar)
     let swipeOn = false, swipeFrom = null;
     const screenEl = document.getElementById("pyxel-screen");
@@ -297,7 +338,9 @@
       const left = document.getElementById("left"), right = document.getElementById("right");
       left.replaceChildren();
       right.replaceChildren();
-      if (spec.pad && spec.pad !== "none") left.appendChild(makePad(spec.pad === "4" ? "p4" : spec.pad));
+      dragAcc = [0, 0];
+      if (spec.pad === "drag") left.appendChild(makeTrackpad());
+      else if (spec.pad && spec.pad !== "none") left.appendChild(makePad(spec.pad === "4" ? "p4" : spec.pad));
       (spec.buttons || []).forEach(([label, key], i) => {
         const b = document.createElement("div");
         b.className = "btn" + (i === 0 ? " main" : "") + (spec.pad === "none" ? " wide" : "");
@@ -309,6 +352,7 @@
         right.appendChild(b);
       });
       document.getElementById("clusters").classList.toggle("nopad", !spec.pad || spec.pad === "none");
+      document.getElementById("clusters").classList.toggle("drag", spec.pad === "drag");
       swipeOn = !!spec.swipe;
       document.getElementById("hint").textContent = spec.hint || "";
       document.getElementById("back").textContent = spec.scene === "play" ? "◀ título" : "◀ volver";

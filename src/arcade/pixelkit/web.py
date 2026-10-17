@@ -111,11 +111,35 @@ def touch(scene):
     spec = dict({"menu": MENU, "nav": NAV}.get(scene, _play))
     spec.update(_screen, scene=scene)
     try:
-        if js.window.matchMedia("(pointer: coarse)").matches:
+        if is_touch():
             pyxel.mouse(False)    # con el dedo, la flechita quedaba donde tocaste
         js.window.mhwTouch(json.dumps(spec))
     except Exception:
         pass
+
+
+def is_touch():
+    """¿se juega con el dedo? (celular o tablet). sirve para elegir textos:
+    "toca para jugar" en vez de "enter para jugar"."""
+    if not ACTIVE:
+        return False
+    try:
+        return bool(js.window.matchMedia("(pointer: coarse)").matches)
+    except Exception:
+        return False
+
+
+def drag():
+    """(dx, dy) en píxeles de juego que se arrastró el trackpad (pad = "drag"
+    en [game.touch]) desde la última llamada. llamar una vez por frame. fuera
+    de la web, o sin dedo, es (0, 0)."""
+    if not ACTIVE:
+        return (0.0, 0.0)
+    try:
+        dx, dy = str(js.window.mhwDrag()).split(",")
+        return (float(dx), float(dy))
+    except Exception:
+        return (0.0, 0.0)
 
 
 # --- gamepad -> teclado ---------------------------------------------------
