@@ -2,7 +2,7 @@
 
 es el arcade.py de la web: en vez de lanzar procesos, mira la url. sin
 parámetros abre el menú; con `?game=<id>` bootea ese juego. elegir en el menú
-recarga la página con el id, y esc desde el título de un juego vuelve acá.
+cambia la url y reinicia pyxel, y esc desde el título de un juego vuelve acá.
 """
 import runpy
 
@@ -15,7 +15,9 @@ by_id = {g.id: g for g in discover_games()}
 game = by_id.get(web.current_game() or "")
 
 if game:
+    web.configure(game.width, game.height, game.touch)
     runpy.run_module(game.module, run_name="__main__", alter_sys=True)
 else:
-    from pixelkit.menu import run_menu
-    run_menu()
+    from pixelkit import menu
+    web.configure(menu.W, menu.H)
+    menu.run_menu()

@@ -88,9 +88,11 @@ def apply(cfg=None):
     import pyxel
     cfg = cfg or load()
     mode = SCREEN.get(int(cfg.get("screen_mode", 0)), 0)
-    for fn in (lambda: pyxel.screen_mode(mode),
-               lambda: pyxel.integer_scale(cfg["integer_scale"]),
-               lambda: pyxel.fullscreen(cfg["fullscreen"])):
+    fns = [lambda: pyxel.screen_mode(mode),
+           lambda: pyxel.integer_scale(cfg["integer_scale"])]
+    if not web.ACTIVE:                     # en la web la pone la página
+        fns.append(lambda: pyxel.fullscreen(cfg["fullscreen"]))
+    for fn in fns:
         try:
             fn()
         except Exception:

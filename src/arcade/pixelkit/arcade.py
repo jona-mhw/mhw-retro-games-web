@@ -111,15 +111,18 @@ class Cabinet:
         self.record = False
         self.initials = None
         self.last_ini = "AAA"
+        web.touch("nav")
         pyxel.run(self.update, self.draw)
 
     def _start(self):
         self.world = self.make_world()
         self.scene = PLAY
+        web.touch("play")
 
     def _to_title(self):
         self.scene = TITLE
         self.idle = 0
+        web.touch("nav")
 
     def update(self):
         self.anim += 1
@@ -159,11 +162,13 @@ class Cabinet:
             self.record = self.scoring and scores.qualifies(self.id, self.last_score)
             self.scene = OVER
             self.anim = 0
+            web.touch("nav")
 
     def _upd_over(self):
         if self.anim < 24:                       # un respiro antes de aceptar tecla
             return
-        if pyxel.btnp(pyxel.KEY_RETURN) or pyxel.btnp(pyxel.KEY_SPACE):
+        if pyxel.btnp(pyxel.KEY_RETURN) or pyxel.btnp(pyxel.KEY_SPACE) \
+                or pyxel.btnp(pyxel.MOUSE_BUTTON_LEFT):  # o tocar la pantalla
             if self.record:
                 self.initials = Initials(self.last_ini)
                 self.scene = INITIALS

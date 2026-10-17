@@ -7,3 +7,11 @@ width    = 256
 height   = 224
 blurb    = "el snake con hambre: manzanas seguidas hacen racha, la dorada vale por cinco y el ají te acelera"
 controls = "flechas o wasd mueven · esc salir"
+
+# controles táctiles (celular): los dibuja index.html bajo la pantalla.
+# pad: "4" cruceta, "lr" izq/der, "ud" arriba/abajo, "none" sin pad.
+# buttons: [nombre, tecla]; la tecla es la del teclado que el botón aprieta.
+[game.touch]
+pad     = "4"
+swipe   = true
+hint    = "o desliza el dedo sobre la pantalla"

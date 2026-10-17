@@ -31,6 +31,8 @@ class Game:
         self.controls = meta.get("controls", "")
         self.width = int(meta.get("width", 256))
         self.height = int(meta.get("height", 240))
+        # los controles táctiles de la versión web ([game.touch], ver pixelkit.web)
+        self.touch = dict(meta.get("touch", {}))
 
     def __repr__(self):
         return "Game(%r)" % self.id

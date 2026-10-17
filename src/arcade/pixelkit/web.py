@@ -3,18 +3,23 @@
 en el escritorio cada juego es un proceso y el disco los une. en la web no hay
 procesos ni disco que sobreviva a un reload, así que:
 
-- **lanzar un juego es navegar**: `?game=<id>` en la misma página. el arranque
-  (main.py) lee la url y bootea el juego o el menú. salir de un juego vuelve al
-  menú, que es la página sin parámetros.
+- **lanzar un juego es cambiar la url**: `?game=<id>`. el arranque (main.py) lee
+  la url y bootea el juego o el menú. index.html reinicia pyxel sin recargar la
+  página (así no se pierde la pantalla completa ni hay que bajar pyodide otra
+  vez); si eso no está, recarga y listo.
 - **lo persistente va a localStorage**: config y récords se guardan con la misma
   clave que el archivo json del escritorio, así el resto de pixelkit no se entera.
-- **el gamepad cuenta como teclado**: en el celular pyxel dibuja una cruceta y
-  botones virtuales, pero los juegos leen flechas y espacio. acá se envuelven
-  btn/btnp para que la cruceta valga por flechas y los botones por las teclas
-  que usa cada juego. también sirve con un joystick de verdad.
+- **los controles táctiles los dibuja index.html**, bajo la pantalla. cada juego
+  los declara en `[game.touch]` de su game.toml y acá se le avisa a la página
+  cuál mostrar: "nav" (cruceta + OK, para título, récords e iniciales) o
+  "play" (los del juego). los botones aprietan teclas de verdad, así que los
+  juegos no se enteran de que hay un dedo.
+- **un gamepad físico cuenta como teclado**: se envuelven btn/btnp para que la
+  cruceta valga por flechas y los botones por las teclas que usa cada juego.
 
 fuera del navegador (ACTIVE False) todo esto no hace nada.
 """
+import json
 import sys
 
 import pyxel
@@ -24,6 +29,16 @@ PREFIX = "mhw-arcade:"
 
 if ACTIVE:
     import js
+
+# los controles de navegación: título, game over, iniciales, menú
+NAV = {"pad": "4", "buttons": [["OK", "enter"]],
+       "hint": "toca la pantalla o OK para seguir"}
+MENU = dict(NAV, hint="toca un juego para ver su ficha, otra vez para jugar")
+# si un juego no declara [game.touch], cruceta + acción
+DEFAULT_PLAY = {"pad": "4", "buttons": [["acción", "space"]]}
+
+_screen = {"w": 320, "h": 240}
+_play = DEFAULT_PLAY
 
 
 def load_text(name):
@@ -51,15 +66,25 @@ def current_game():
         return None
 
 
+def _go(query):
+    """cambia de cartucho. index.html sabe reiniciar pyxel sin recargar."""
+    go = getattr(js.window, "mhwGo", None)
+    if go:
+        go(query)
+    elif query:
+        js.window.location.search = query
+    else:
+        js.window.location.href = js.window.location.pathname
+
+
 def launch(game_id):
-    """bootea un juego: recarga la página apuntando a él."""
-    js.window.location.search = "?game=" + game_id
+    """bootea un juego."""
+    _go("?game=" + game_id)
 
 
 def to_menu():
     """vuelve al menú del cabinet: la misma página, sin parámetros."""
-    loc = js.window.location
-    loc.href = loc.pathname
+    _go("")
 
 
 def quit():
@@ -68,6 +93,29 @@ def quit():
         to_menu()
     else:
         pyxel.quit()
+
+
+# --- controles táctiles ---------------------------------------------------
+def configure(width, height, play=None):
+    """qué se está corriendo: el tamaño de pantalla (para repartir el espacio
+    entre juego y controles) y los controles de juego. llamar antes de init."""
+    global _play
+    _screen.update(w=width, h=height)
+    _play = play or DEFAULT_PLAY
+
+
+def touch(scene):
+    """muestra los controles de "menu", "nav" o "play". fuera de la web, nada."""
+    if not ACTIVE:
+        return
+    spec = dict({"menu": MENU, "nav": NAV}.get(scene, _play))
+    spec.update(_screen, scene=scene)
+    try:
+        if js.window.matchMedia("(pointer: coarse)").matches:
+            pyxel.mouse(False)    # con el dedo, la flechita quedaba donde tocaste
+        js.window.mhwTouch(json.dumps(spec))
+    except Exception:
+        pass
 
 
 # --- gamepad -> teclado ---------------------------------------------------

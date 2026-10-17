@@ -47,8 +47,10 @@ DETAIL_H = 42    # el panel de abajo, que describe lo que apunta el cursor
 FOOT_H = 14
 MARGIN = 16      # margen lateral de filas y panel
 
-# ajustes que muestra la pantalla de sistema, en orden
-CONFIG_ITEMS = ("screen_mode", "integer_scale", "fullscreen")
+# ajustes que muestra la pantalla de sistema, en orden. en la web la pantalla
+# completa es un botón de la página (pyxel la pediría sólo para el canvas y
+# taparía los controles táctiles)
+CONFIG_ITEMS = ("screen_mode", "integer_scale") + (() if web.ACTIVE else ("fullscreen",))
 CONFIG_LABEL = {
     "screen_mode": "pantalla",
     "integer_scale": "escala entera",
@@ -196,6 +198,7 @@ class MenuApp:
         # frame y scores.top() abre el json cada vez que se lo llama. no se
         # desactualiza: al volver de un juego, el menú es un proceso nuevo.
         self.board = scores.load()
+        self._mouse_at = None
 
     def loop(self):
         pyxel.init(W, H, title="MHW RETRO FUTURE", fps=60,
@@ -203,6 +206,7 @@ class MenuApp:
         pyxel.colors[:] = MENU_PAL
         pyxel.mouse(True)
         config.apply(self.cfg)             # arranca con lo guardado
+        web.touch("menu")
         pyxel.run(self.update, self.draw)
         return self.result
 
@@ -266,8 +270,12 @@ class MenuApp:
             m.move(1)
         if pyxel.mouse_wheel:
             m.move(-1 if pyxel.mouse_wheel > 0 else 1)
+        moved = (pyxel.mouse_x, pyxel.mouse_y) != self._mouse_at
+        self._mouse_at = (pyxel.mouse_x, pyxel.mouse_y)
+        before = m.cursor
         if m.view == "list":
-            m.point_at(self._mouse_row())
+            if moved:
+                m.point_at(self._mouse_row())
             if pyxel.btnp(pyxel.KEY_C):
                 m.view = "credits"
         elif m.view == "config":
@@ -281,7 +289,13 @@ class MenuApp:
 
         confirm = pyxel.btnp(pyxel.KEY_RETURN) or pyxel.btnp(pyxel.KEY_SPACE)
         if m.view != "config":            # en config el clic no cicla ajustes sin querer
-            confirm = confirm or pyxel.btnp(pyxel.MOUSE_BUTTON_LEFT)
+            # con el dedo, el primer toque elige la fila (y muestra su ficha)
+            # y el segundo la lanza. con mouse el hover ya la eligió: un clic
+            tap = pyxel.btnp(pyxel.MOUSE_BUTTON_LEFT)
+            if tap and m.view == "list" and (m.cursor != before
+                                              or self._mouse_row() is None):
+                tap = False
+            confirm = confirm or tap
         if confirm:
             r = m.select()
             if r and r[0] == "launch":

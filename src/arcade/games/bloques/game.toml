@@ -7,3 +7,11 @@ width    = 220
 height   = 220
 blurb    = "tetris blitz: 100 segundos, tres próximas, hold, combos, tetris seguidos y perfect clear"
 controls = "flechas · arriba gira · espacio cae · c guarda · z ítem · esc salir"
+
+# controles táctiles (celular): los dibuja index.html bajo la pantalla.
+# pad: "4" cruceta, "lr" izq/der, "ud" arriba/abajo, "none" sin pad.
+# buttons: [nombre, tecla]; la tecla es la del teclado que el botón aprieta.
+[game.touch]
+pad     = "4"                   # arriba gira, abajo baja suave
+buttons = [["caer", "space"], ["guardar", "c"], ["ítem", "z"]]
+hint    = "cruceta: ▲ gira · ▼ baja"

@@ -993,6 +993,7 @@ class App:
         # con el demo vivo detrás; enter entra a la mesa de arena.
         self.scene = "play" if self.test else "title"
         self.tanim = 0
+        web.touch("play" if self.test else "nav")
         pyxel.run(self.update, self.draw)
 
     def _meter(self):
@@ -1012,12 +1013,14 @@ class App:
                 web.quit()            # desde el título, esc vuelve al emulador
             else:
                 self.scene = "title"  # desde la mesa, esc vuelve al título
+                web.touch("nav")
             return
         if self.scene == "title":
             self.tanim += 1
             if (pyxel.btnp(pyxel.KEY_RETURN) or pyxel.btnp(pyxel.KEY_SPACE)
                     or pyxel.btnp(pyxel.MOUSE_BUTTON_LEFT)):
                 self.scene = "play"
+                web.touch("play")
             self.sim.step()           # el demo sigue vivo detrás del título
             return
         keys = (pyxel.KEY_1, pyxel.KEY_2, pyxel.KEY_3, pyxel.KEY_4, pyxel.KEY_5,

@@ -7,3 +7,11 @@ width    = 200
 height   = 220
 blurb    = "aguantá 100 segundos: gemas en cadena, rozar paga y la munición se cuenta"
 controls = "mouse o flechas mueven · espacio dispara · esc salir"
+
+# controles táctiles (celular): los dibuja index.html bajo la pantalla.
+# pad: "4" cruceta, "lr" izq/der, "ud" arriba/abajo, "none" sin pad.
+# buttons: [nombre, tecla]; la tecla es la del teclado que el botón aprieta.
+[game.touch]
+pad     = "lr"
+buttons = [["fuego", "space"]]
+hint    = "o arrastra el dedo sobre la pantalla"
