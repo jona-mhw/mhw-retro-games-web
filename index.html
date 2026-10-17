@@ -355,7 +355,8 @@
       document.getElementById("clusters").classList.toggle("drag", spec.pad === "drag");
       swipeOn = !!spec.swipe;
       document.getElementById("hint").textContent = spec.hint || "";
-      document.getElementById("back").textContent = spec.scene === "play" ? "◀ título" : "◀ volver";
+      document.getElementById("back").textContent =
+        { play: "⏸ pausa", pause: "◀ título" }[spec.scene] || "◀ volver";
       document.getElementById("boot").classList.add("gone");
       layout();
     };
@@ -385,7 +386,15 @@
                     || new URLSearchParams(location.search).has("touch");
     if (isTouch) document.body.classList.add("touch");
     window.addEventListener("resize", e => { if (e.isTrusted) layout(); });
-    window.addEventListener("orientationchange", () => setTimeout(layout, 200));
+    // el menú se arma vertical o apaisado según cómo esté el teléfono: al
+    // girarlo se rearma (los juegos tienen su tamaño fijo y sólo se reacomodan)
+    let wasPortrait = innerHeight > innerWidth;
+    window.addEventListener("orientationchange", () => setTimeout(() => {
+      layout();
+      const nowPortrait = innerHeight > innerWidth;
+      if (isTouch && nowPortrait !== wasPortrait && !new URLSearchParams(location.search).get("game")) relaunch();
+      wasPortrait = nowPortrait;
+    }, 250));
 
     holdButton(document.getElementById("back"), "esc");
     const fs = document.getElementById("fs");

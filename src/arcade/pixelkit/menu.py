@@ -18,6 +18,7 @@ una fila de alto variable: al llegar al sexto juego las filas se achicaron y el
 texto se salió de su caja. ahora todo se deriva de la altura de fila, así que
 sumar juegos aprieta la lista pero no pisa nada.
 """
+import math
 import sys
 
 import pyxel
@@ -26,7 +27,12 @@ from pixelkit import config, crt, scores, web
 from pixelkit.pxtext import CW, ctext, text
 from pixelkit.registry import discover_games
 
-W, H = 320, 240
+# en el celular parado el menú es vertical: filas más altas, que se tocan con
+# el dedo sin errarle, y un horizonte synthwave en la cabecera. en el
+# escritorio (o el celular acostado) sigue siendo el 320x240 de siempre.
+PORTRAIT = web.is_touch() and web.portrait()
+W, H = (240, 400) if PORTRAIT else (320, 240)
+HEAD_H = 84 if PORTRAIT else 44
 
 # paleta del menú (16 colores). el acento pasó del verde de marca a un cian
 # eléctrico y el header a magenta: es lo que hace que el cabinet se lea como
@@ -40,10 +46,10 @@ MENU_PAL = [
     0xE04A2A, 0x8AC52F,
 ]
 
-ROW_Y0 = 50      # y de la primera fila de juego
-ROW_H = 18       # alto máximo de cada fila (se achica si hay muchos juegos)
+ROW_Y0 = HEAD_H + 6                 # y de la primera fila de juego
+ROW_H = 22 if PORTRAIT else 18      # alto máximo de cada fila (se achica si hay muchos juegos)
 ROW_MIN = 9      # abajo de esto no entra ni una línea de texto
-DETAIL_H = 42    # el panel de abajo, que describe lo que apunta el cursor
+DETAIL_H = 66 if PORTRAIT else 42   # el panel de abajo, que describe lo que apunta el cursor
 FOOT_H = 14
 MARGIN = 16      # margen lateral de filas y panel
 
@@ -320,11 +326,15 @@ class MenuApp:
 
     def _draw_header(self):
         pyxel.cls(BG)
-        pyxel.rect(0, 0, W, 44, PANEL)
-        pyxel.rect(0, 44, W, 1, LINE)
+        pyxel.rect(0, 0, W, HEAD_H, PANEL)
+        pyxel.rect(0, HEAD_H, W, 1, LINE)
         blink = (pyxel.frame_count // 16) % 2 == 0
+        if PORTRAIT:
+            self._draw_horizon(34, HEAD_H)
         ctext(W / 2, 11, "M H W   R E T R O   F U T U R E", ACC if blink else HEAD)
         ctext(W / 2, 25, "el futuro, como se veía en 1985", DIM)
+        if PORTRAIT:
+            return
         # una línea de neón que se abre desde el centro, en cian y magenta: es
         # todo el guiño retrofuturista que se permite el header. probé un
         # abanico de rieles en perspectiva y en 7 px de alto no se lee como
@@ -334,6 +344,34 @@ class MenuApp:
             largo = 1 + i * 3 // W
             pyxel.rect(W // 2 + 4 + i, 35, largo + 2, 1, col)
             pyxel.rect(W // 2 - 6 - i, 35, largo + 2, 1, col)
+
+    def _draw_horizon(self, top, bottom):
+        """el atardecer synthwave de la cabecera vertical: estrellas, un sol
+        rayado que se apoya en el horizonte y una grilla que avanza. en 50 px
+        de alto sí se lee como paisaje (en los 7 px del menú apaisado no)."""
+        f = pyxel.frame_count
+        hor = top + (bottom - top) * 11 // 20
+        for i in range(14):                         # estrellas que titilan
+            sx = (i * 67 + 13) % W
+            sy = top + (i * 29) % max(1, hor - top - 2)
+            if (f // 20 + i) % 5:
+                pyxel.pset(sx, sy, DIM if i % 3 else TXT)
+        r = 17                                      # el sol, sólo la mitad de arriba
+        cx = W // 2
+        for dy in range(-r, 0):
+            if dy > -r * 0.6 and (dy + f // 6) % 3 == 0:
+                continue                            # las franjas, que bajan
+            half = int(math.sqrt(r * r - dy * dy))
+            pyxel.rect(cx - half, hor + dy, 2 * half + 1, 1, AMBER if dy < -r // 2 else PINK)
+        pyxel.rect(0, hor, W, 1, ACC)               # el horizonte
+        depth = bottom - hor
+        for k in range(6):                          # líneas que se acercan
+            t = ((k + (f % 30) / 30) / 6) ** 2
+            y = hor + int(depth * t)
+            if hor < y < bottom:
+                pyxel.rect(0, y, W, 1, PINK if t > 0.45 else LINE)
+        for i in range(-9, 10):                     # rieles hacia el sol
+            pyxel.line(cx + i * 6, hor, cx + i * 34, bottom, LINE)
 
     def _draw_footer(self, hint):
         pyxel.rect(0, H - 14, W, 14, PANEL)
@@ -349,8 +387,9 @@ class MenuApp:
         self._draw_special_row(m.credits_row, "C R É D I T O S", AMBER)
         self._draw_special_row(m.config_row, "S I S T E M A", SKY)
         self._draw_detail()
-        self._draw_footer("flechas mover · enter elige"
-                          + ("" if web.ACTIVE else " · esc salir"))
+        self._draw_footer(_t("%d juegos en el cabinet" % len(m.games),
+                             "flechas mover · enter elige"
+                             + ("" if web.ACTIVE else " · esc salir")))
 
     def _row_box(self, i):
         """la caja de una fila: (x, y, ancho, alto, seleccionada)."""
@@ -373,6 +412,12 @@ class MenuApp:
         text(x + 15, ty, g.title.upper(), ACC if sel else TXT2)
         tag = "%dx%d" % (g.width, g.height)
         text(x + w - len(tag) * CW - 5, ty, tag, TXT2 if sel else DIM)
+        if g.badge:                         # "NUEVO": titila al lado del título
+            bx = x + 15 + len(g.title) * CW + 6
+            bw = len(g.badge) * CW + 4
+            on = (pyxel.frame_count // 20) % 2 == 0
+            pyxel.rect(bx, ty - 2, bw, 9, PINK if on else HEAD)
+            text(bx + 2, ty, g.badge.upper(), BG)
 
     def _draw_special_row(self, i, label, color):
         x, y, w, bh, sel = self._row_box(i)
@@ -395,8 +440,12 @@ class MenuApp:
             return ("SISTEMA", SKY,
                     ["pantalla, escala y modo crt — vale para todos"], "")
         g = m.games[m.cursor]
-        body = wrap(g.blurb, (W - 2 * MARGIN) // CW)[:2]
-        if g.controls:
+        cols = (W - 2 * MARGIN) // CW
+        body = wrap(g.blurb, cols)[:4 if PORTRAIT else 2]
+        if web.is_touch():
+            if g.touch.get("hint"):
+                body += wrap(g.touch["hint"], cols)[:1]
+        elif g.controls:
             body.append(g.controls)
         best = scores.top(g.id, 1, self.board)
         record = "récord %s %d" % (best[0]["ini"], best[0]["score"]) if best else ""
@@ -420,22 +469,22 @@ class MenuApp:
 
     def _draw_credits(self):
         self._draw_header()
-        y = 56
+        y = HEAD_H + 12
         for s, col in credits_lines(self.model.games):
             if s:
                 ctext(W / 2, y, s, col)
             y += 11
-        self._draw_footer("esc / clic para volver")
+        self._draw_footer(_t("toca o volver para salir", "esc / clic para volver"))
 
     def _draw_config(self):
         self._draw_header()
-        ctext(W / 2, 54, "S I S T E M A", SKY)
-        ctext(W / 2, 66, "vale para todos los juegos", DIM)
-        y0, rh = 88, 20
+        ctext(W / 2, HEAD_H + 10, "S I S T E M A", SKY)
+        ctext(W / 2, HEAD_H + 22, "vale para todos los juegos", DIM)
+        y0, rh = HEAD_H + 44, 20
         for i, key in enumerate(CONFIG_ITEMS):
             y = y0 + i * rh
             sel = i == self.model.cfg_cursor
-            x, w = 40, W - 80
+            x, w = (16, W - 32) if PORTRAIT else (40, W - 80)
             pyxel.rect(x, y, w, rh - 4, SEL if sel else PANEL)
             pyxel.rectb(x, y, w, rh - 4, SKY if sel else LINE)
             text(x + 8, y + 5, CONFIG_LABEL[key], TXT2 if sel else TXT)
@@ -447,29 +496,37 @@ class MenuApp:
             if CONFIG_ITEMS[self.model.cfg_cursor] == "screen_mode" else ""
         if hint:
             ctext(W / 2, y0 + len(CONFIG_ITEMS) * rh + 8, hint, DIM)
-        self._draw_footer("flechas: elegir y ajustar   esc volver")
+        self._draw_footer(_t("cruceta: elegir y ajustar · volver",
+                             "flechas: elegir y ajustar   esc volver"))
 
     def _draw_records(self):
         """el podio del emulador: los mejores de cada juego, en un solo lugar."""
         self._draw_header()
-        ctext(W / 2, 54, "S A L Ó N   D E   L A   F A M A", PINK)
+        ctext(W / 2, HEAD_H + 10, "S A L Ó N   D E   L A   F A M A", PINK)
         titles = {g.id: g.title for g in self.model.games}
         rows = [(gid, lst) for gid, lst in
                 scores.hall([g.id for g in self.model.games], per=3,
                             board=self.board) if lst]
         if not rows:
-            ctext(W / 2, 110, "todavía no hay récords", DIM)
+            ctext(W / 2, HEAD_H + 60, "todavía no hay récords", DIM)
         else:
-            y = 74
+            # vertical: el juego en una línea y sus récords abajo, que a 240 de
+            # ancho no entran al lado
+            y = HEAD_H + 28
             for gid, lst in rows:
                 text(22, y, titles.get(gid, gid).upper(), ACC)
-                ex = 118
+                ex, ey = (22, y + 10) if PORTRAIT else (118, y)
                 for j, e in enumerate(lst):
                     s = "%s %d" % (e["ini"], e["score"])
-                    text(ex, y, s, AMBER if j == 0 else TXT)
+                    text(ex, ey, s, AMBER if j == 0 else TXT)
                     ex += len(s) * 4 + 8
-                y += 16
-        self._draw_footer("esc / clic para volver")
+                y += 24 if PORTRAIT else 16
+        self._draw_footer(_t("toca o volver para salir", "esc / clic para volver"))
+
+
+def _t(touch, keys):
+    """el texto de tocar en el celular, el de teclas si no."""
+    return touch if web.is_touch() else keys
 
 
 def run_menu(out_path=None):

@@ -34,10 +34,12 @@ if ACTIVE:
 NAV = {"pad": "4", "buttons": [["OK", "enter"]],
        "hint": "toca la pantalla o OK para seguir"}
 MENU = dict(NAV, hint="toca un juego para ver su ficha, otra vez para jugar")
+PAUSE = dict(NAV, hint="OK sigue · volver sale al título")
 # si un juego no declara [game.touch], cruceta + acción
 DEFAULT_PLAY = {"pad": "4", "buttons": [["acción", "space"]]}
 
 _screen = {"w": 320, "h": 240}
+_touch = None        # is_touch() lo averigua una vez
 _play = DEFAULT_PLAY
 
 
@@ -108,7 +110,7 @@ def touch(scene):
     """muestra los controles de "menu", "nav" o "play". fuera de la web, nada."""
     if not ACTIVE:
         return
-    spec = dict({"menu": MENU, "nav": NAV}.get(scene, _play))
+    spec = dict({"menu": MENU, "nav": NAV, "pause": PAUSE}.get(scene, _play))
     spec.update(_screen, scene=scene)
     try:
         if is_touch():
@@ -121,10 +123,32 @@ def touch(scene):
 def is_touch():
     """¿se juega con el dedo? (celular o tablet). sirve para elegir textos:
     "toca para jugar" en vez de "enter para jugar"."""
+    global _touch
+    if _touch is None:
+        try:
+            _touch = ACTIVE and bool(js.window.matchMedia("(pointer: coarse)").matches)
+        except Exception:
+            _touch = False
+    return _touch
+
+
+def portrait():
+    """¿la pantalla está parada? (más alta que ancha)."""
     if not ACTIVE:
         return False
     try:
-        return bool(js.window.matchMedia("(pointer: coarse)").matches)
+        return js.window.innerHeight > js.window.innerWidth
+    except Exception:
+        return False
+
+
+def page_hidden():
+    """¿la página está escondida? (cambiaste de app o de pestaña): el Cabinet
+    pausa solo, para que una llamada no te cueste la partida."""
+    if not ACTIVE:
+        return False
+    try:
+        return bool(js.document.hidden)
     except Exception:
         return False
 

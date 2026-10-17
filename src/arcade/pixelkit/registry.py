@@ -33,6 +33,7 @@ class Game:
         self.height = int(meta.get("height", 240))
         # los controles táctiles de la versión web ([game.touch], ver pixelkit.web)
         self.touch = dict(meta.get("touch", {}))
+        self.badge = meta.get("badge", "")    # un cartel en el menú: "nuevo"
 
     def __repr__(self):
         return "Game(%r)" % self.id

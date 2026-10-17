@@ -25,8 +25,10 @@ import pyxel
 from pixelkit import config, crt, scores, web
 from pixelkit.pxtext import ctext, text
 
-TITLE, PLAY, OVER, INITIALS, ATTRACT = range(5)
+TITLE, PLAY, OVER, INITIALS, ATTRACT, READY, PAUSE = range(7)
 IDLE_TO_ATTRACT = 240                       # 4 s a 60 fps
+COUNT_STEP = 34      # frames de cada número de la cuenta regresiva (3, 2, 1)
+GO_FRAMES = 36       # el "¡YA!" se queda encima mientras el juego ya corre
 ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 "
 _WAKE = (pyxel.KEY_RETURN, pyxel.KEY_SPACE, pyxel.KEY_UP, pyxel.KEY_DOWN,
          pyxel.KEY_LEFT, pyxel.KEY_RIGHT, pyxel.KEY_W, pyxel.KEY_A,
@@ -115,9 +117,22 @@ class Cabinet:
         pyxel.run(self.update, self.draw)
 
     def _start(self):
+        """partida nueva: el mundo se arma ya (se ve detrás de la cuenta) pero
+        no corre hasta el ¡YA!. así nadie arranca perdiendo medio segundo."""
         self.world = self.make_world()
-        self.scene = PLAY
+        self._ready(3)
         web.touch("play")
+
+    def _ready(self, n):
+        """cuenta regresiva desde n (3 al empezar, 1 al volver de la pausa)."""
+        self.scene = READY
+        self.anim = (3 - n) * COUNT_STEP
+        self.go = 0
+
+    def _pause(self):
+        self.scene = PAUSE
+        self.anim = 0
+        web.touch("pause")
 
     def _to_title(self):
         self.scene = TITLE
@@ -129,6 +144,8 @@ class Cabinet:
         if pyxel.btnp(pyxel.KEY_ESCAPE):
             if self.scene == TITLE:
                 web.quit()                       # en la web: vuelve al menú
+            elif self.scene in (PLAY, READY):    # jugando, esc pausa: un toque
+                self._pause()                    # sin querer no tira la partida
             else:
                 self._to_title()
             return
@@ -142,6 +159,23 @@ class Cabinet:
             self._upd_initials()
         elif self.scene == ATTRACT:
             self._upd_attract()
+        elif self.scene == READY:
+            self._upd_ready()
+        elif self.scene == PAUSE:
+            self._upd_pause()
+
+    def _upd_ready(self):
+        if self.anim >= 3 * COUNT_STEP:
+            self.scene = PLAY
+            self.go = GO_FRAMES
+
+    def _upd_pause(self):
+        if self.anim < 10:                       # que el mismo toque no la saque
+            return
+        if pyxel.btnp(pyxel.KEY_RETURN) or pyxel.btnp(pyxel.KEY_SPACE) \
+                or pyxel.btnp(pyxel.KEY_P) or pyxel.btnp(pyxel.MOUSE_BUTTON_LEFT):
+            self._ready(1)
+            web.touch("play")
 
     def _upd_title(self):
         if _woke():
@@ -156,6 +190,11 @@ class Cabinet:
             self.anim = 0
 
     def _upd_play(self):
+        # p pausa, y en el celular se pausa sola si te vas a otra app
+        if pyxel.btnp(pyxel.KEY_P) or web.page_hidden():
+            self._pause()
+            return
+        self.go = max(0, self.go - 1)
         self.world.update()
         if getattr(self.world, "over", False):
             self.last_score = int(getattr(self.world, "score", 0))
@@ -190,6 +229,14 @@ class Cabinet:
     def draw(self):
         if self.scene == PLAY:
             self.world.draw()
+            if self.go:
+                self._draw_go()
+        elif self.scene == READY:
+            self.world.draw()
+            self._draw_count()
+        elif self.scene == PAUSE:
+            self.world.draw()
+            self._draw_pause()
         elif self.scene == OVER:
             self.world.draw()
             self._draw_over()
@@ -227,7 +274,7 @@ class Cabinet:
         else:
             ctext(cx, self.h - 44, "recreativo", u.accent)
         if self._blink():
-            ctext(cx, self.h * 0.36, "enter para jugar", u.warn)
+            ctext(cx, self.h * 0.36, _t("toca para jugar", "enter para jugar"), u.warn)
 
     def _draw_over(self):
         u, cx = self.ui, self.w / 2
@@ -242,7 +289,10 @@ class Cabinet:
         else:
             ctext(cx, by + 9, "fin de la partida", u.text)
         ctext(cx, by + 24, "puntaje  %d" % self.last_score, u.text)
-        hint = "enter para tus iniciales" if self.record else "enter para seguir"
+        if self.record:
+            hint = _t("toca: tus iniciales", "enter para tus iniciales")
+        else:
+            hint = _t("toca para seguir", "enter para seguir")
         ctext(cx, by + 39, hint, u.dim)
 
     def _draw_initials(self):
@@ -264,7 +314,7 @@ class Cabinet:
             if i == self.initials.cur:
                 pyxel.rect(int(x0 + i * gap - 4), int(self.h * 0.48 + 20), 16, 2, u.accent)
         ctext(cx, self.h - 34, "arriba/abajo letra · izq/der mueve", u.dim)
-        ctext(cx, self.h - 24, "enter confirma", u.dim)
+        ctext(cx, self.h - 24, _t("OK confirma", "enter confirma"), u.dim)
 
     def _draw_attract(self):
         u, cx = self.ui, self.w / 2
@@ -287,12 +337,72 @@ class Cabinet:
             row = "%d   %s   %d" % (i + 1, e["ini"], e["score"])
             ctext(cx + dx, y0 + i * 12, row, col)
         if self._blink(20):
-            ctext(cx, self.h - 18, "una tecla para volver", u.dim)
+            ctext(cx, self.h - 18, _t("toca para volver", "una tecla para volver"), u.dim)
+
+    # --- cuenta regresiva y pausa ------------------------------------------
+    def _veil(self):
+        """oscurece el juego a medias (un tramado) para que lo de encima se lea."""
+        pyxel.dither(0.55)
+        pyxel.rect(0, 0, self.w, self.h, self.ui.shadow)
+        pyxel.dither(1.0)
+
+    def _draw_count(self):
+        u = self.ui
+        self._veil()
+        n = 3 - self.anim // COUNT_STEP
+        t = (self.anim % COUNT_STEP) / COUNT_STEP          # 0 -> 1 dentro del número
+        scale = 6 if t < 0.15 else 5                       # golpe al aparecer
+        col = (u.warn, u.accent, u.text)[max(0, min(2, 3 - n))]
+        _big_text(self.w / 2, self.h / 2, str(n), col, scale, u.shadow)
+        ctext(self.w / 2, self.h / 2 + 26, "¡prepárate!", u.dim)
+
+    def _draw_go(self):
+        u = self.ui
+        k = self.go / GO_FRAMES                            # 1 -> 0
+        if self.go % 6 < 4 or k < 0.5:
+            _big_text(self.w / 2, self.h / 2, "¡YA!", u.accent, 3 + int(3 * k), u.shadow)
+
+    def _draw_pause(self):
+        u, cx = self.ui, self.w / 2
+        self._veil()
+        bw, bh = min(self.w - 20, 170), 56
+        bx, by = int(cx - bw / 2), int(self.h / 2 - bh / 2)
+        pyxel.rect(bx + 3, by + 3, bw, bh, u.shadow)
+        pyxel.rect(bx, by, bw, bh, u.bg)
+        pyxel.rectb(bx, by, bw, bh, u.accent)
+        _big_text(cx, by + 16, "PAUSA", u.accent, 2, u.shadow)
+        ctext(cx, by + 32, _t("OK o toca para seguir", "enter para seguir"), u.text)
+        ctext(cx, by + 43, _t("volver: sale al título", "esc: sale al título"), u.dim)
 
 
 # fuente 2x hecha a mano para las 3 iniciales grandes ------------------------
 def spaced(s):
     return "  ".join(s)
+
+
+def _t(touch, keys):
+    """el texto que corresponde: el de tocar en el celular, el de teclas si no."""
+    return touch if web.is_touch() else keys
+
+
+def _big_text(cx, cy, s, col, scale=2, shadow=None):
+    """texto grande centrado en (cx, cy), escalando la fuente de pyxel píxel a
+    píxel. entiende "¡" (el "!" dado vuelta), que la fuente no trae."""
+    img = _glyph_image()
+    w = len(s) * 4 * scale
+    x0 = int(cx - w / 2 + scale / 2)
+    y0 = int(cy - 3 * scale)
+    for i, ch in enumerate(s):
+        flip = ch == "¡"
+        img.cls(0)
+        img.text(0, 0, "!" if flip else ch, 7)
+        for gy in range(5):                  # los glifos usan 5 filas de 6
+            for gx in range(4):
+                if img.pget(gx, (4 - gy) if flip else gy) == 7:
+                    px, py = x0 + (i * 4 + gx) * scale, y0 + gy * scale
+                    if shadow is not None:
+                        pyxel.rect(px + 1, py + 1, scale, scale, shadow)
+                    pyxel.rect(px, py, scale, scale, col)
 
 
 def _big_char(x, y, ch, col):
