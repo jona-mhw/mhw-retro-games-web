@@ -5,8 +5,8 @@ author   = "Jona"
 year     = 2026
 width    = 220
 height   = 220
-blurb    = "tetris blitz: 100 segundos, tres próximas, hold, combos, tetris seguidos y perfect clear"
-controls = "flechas · arriba gira · espacio cae · c guarda · z ítem · esc salir"
+blurb    = "tetris blitz: 100 segundos, combos, piezas doradas y fiebre x2 al final. se juega con el dedo sobre el tablero"
+controls = "flechas · arriba gira · espacio cae · c guarda · z ítem · mouse: clic gira, arrastra mueve · esc salir"
 
 # controles táctiles (celular): los dibuja index.html bajo la pantalla.
 # pad: "4" cruceta, "lr" izq/der, "ud" arriba/abajo, "none" sin pad.
@@ -14,4 +14,7 @@ controls = "flechas · arriba gira · espacio cae · c guarda · z ítem · esc 
 [game.touch]
 pad     = "4"                   # arriba gira, abajo baja suave
 buttons = [["caer", "space"], ["guardar", "c"], ["ítem", "z"]]
-hint    = "cruceta: ▲ gira · ▼ baja"
+# sin swipe a propósito: el juego lee el dedo sobre la pantalla (el mouse de
+# pyxel) y arma sus propios gestos. con swipe = true cada arrastre apretaría
+# además una flecha y la pieza se movería el doble.
+hint    = "en el tablero: toca gira · arrastra mueve · desliza ▼ cae · ▲ guarda"

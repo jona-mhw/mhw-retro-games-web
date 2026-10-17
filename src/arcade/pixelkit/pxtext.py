@@ -14,10 +14,16 @@ _ACUTE = {"á": "a", "é": "e", "í": "i", "ó": "o", "ú": "u",
 _DIER = {"ü": "u", "Ü": "U"}
 _TILDE = {"ñ": "n", "Ñ": "N"}
 _MIDDOT = "·"     # punto medio: tampoco está en la fuente, lo dibujamos suelto
+# los signos de apertura, que la fuente tampoco trae: se dibujan enteros, el
+# "!" y el "?" de pyxel dados vuelta (3x5, una fila por cadena)
+_GLYPHS = {
+    "¡": (".X.", "...", ".X.", ".X.", ".X."),
+    "¿": (".X.", "...", ".X.", "X..", ".XX"),
+}
 
 
 def text(x, y, s, col):
-    """como pyxel.text pero entendiendo tildes, diéresis, la ñ y el punto medio."""
+    """como pyxel.text pero entendiendo tildes, diéresis, la ñ, ¡ ¿ y el punto medio."""
     base = []
     marks = []
     for i, ch in enumerate(s):
@@ -29,6 +35,8 @@ def text(x, y, s, col):
             base.append(_DIER[ch]); marks.append((i, "dier"))
         elif ch == _MIDDOT:
             base.append(" "); marks.append((i, "middot"))
+        elif ch in _GLYPHS:
+            base.append(" "); marks.append((i, ch))
         else:
             base.append(ch)
     pyxel.text(x, y, "".join(base), col)
@@ -42,6 +50,11 @@ def text(x, y, s, col):
             pyxel.pset(gx + 2, y - 2, col)
         elif kind == "middot":
             pyxel.pset(gx + 1, y + 2, col)
+        elif kind in _GLYPHS:
+            for gy, row in enumerate(_GLYPHS[kind]):
+                for dx, px in enumerate(row):
+                    if px == "X":
+                        pyxel.pset(gx + dx, y + gy, col)
         else:  # tilde de la ñ
             pyxel.pset(gx, y - 2, col)
             pyxel.pset(gx + 1, y - 3, col)

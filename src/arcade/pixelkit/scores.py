@@ -25,8 +25,11 @@ N = 5   # cuántos récords guarda cada juego
 # pasa los 100.000. si cambia una escala de puntaje hay que volver a medir —
 # un récord de fábrica inalcanzable arruina el podio igual que uno regalado.
 DEFAULTS = {
-    "culebra": [("ACE", 45), ("BOA", 26), ("SSS", 12)],
-    "bloques": [("TNT", 15000), ("BLK", 7000), ("ROW", 2500)],
+    # culebra y bloques se recalibraron con el rediseño (frenesí, ratón y
+    # arañas; oro y fiebre): bots viejos vs nuevos con la misma lógica dieron
+    # 1,3-2,2x en culebra y 2,0-2,4x en bloques.
+    "culebra": [("ACE", 65), ("BOA", 38), ("SSS", 17)],
+    "bloques": [("TNT", 32000), ("BLK", 15000), ("ROW", 5000)],
     # pong sube un escalón por la racha (+10 cada 10 devoluciones seguidas):
     # el jugador perfecto simulado la cobra entera (+50) y hace 230-500 con el
     # muro. estos siguen siendo un piso para un humano, no una medición.

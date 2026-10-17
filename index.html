@@ -300,15 +300,19 @@
 
     // deslizar sobre la pantalla = un toque de flecha (culebra, cruzar)
     let swipeOn = false, swipeFrom = null;
+    const swipeHeld = {};          // dirección -> timer del keyup pendiente
     const screenEl = document.getElementById("pyxel-screen");
     screenEl.addEventListener("pointerdown", e => { swipeFrom = [e.clientX, e.clientY]; });
     screenEl.addEventListener("pointermove", e => {
       if (!swipeOn || !swipeFrom) return;
       const dx = e.clientX - swipeFrom[0], dy = e.clientY - swipeFrom[1];
-      if (Math.hypot(dx, dy) < 28) return;
+      if (Math.hypot(dx, dy) < 20) return;
       const dir = Math.abs(dx) > Math.abs(dy) ? (dx < 0 ? "left" : "right") : (dy < 0 ? "up" : "down");
+      // si la misma flecha sigue apretada por el desliz anterior, se suelta
+      // primero: si no, el segundo desliz no manda keydown y se pierde
+      if (swipeHeld[dir]) { clearTimeout(swipeHeld[dir]); swipeHeld[dir] = 0; release(dir); }
       press(dir);
-      setTimeout(() => release(dir), 60);
+      swipeHeld[dir] = setTimeout(() => { swipeHeld[dir] = 0; release(dir); }, 60);
       swipeFrom = [e.clientX, e.clientY];        // permite encadenar giros
     });
     screenEl.addEventListener("pointerup", () => { swipeFrom = null; });

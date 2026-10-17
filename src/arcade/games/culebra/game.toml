@@ -5,7 +5,7 @@ author   = "Jona"
 year     = 2026
 width    = 256
 height   = 224
-blurb    = "el snake con hambre: manzanas seguidas hacen racha, la dorada vale por cinco y el ají te acelera"
+blurb    = "el snake con hambre: caza ratones, esquiva arañas, encadena rachas y cierra con un frenesí x2"
 controls = "flechas o wasd mueven · esc salir"
 
 # controles táctiles (celular): los dibuja index.html bajo la pantalla.
@@ -14,4 +14,4 @@ controls = "flechas o wasd mueven · esc salir"
 [game.touch]
 pad     = "4"
 swipe   = true
-hint    = "o desliza el dedo sobre la pantalla"
+hint    = "o desliza el dedo: dos deslices rápidos = dos giros"
