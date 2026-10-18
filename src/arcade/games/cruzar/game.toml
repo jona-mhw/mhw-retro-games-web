@@ -4,7 +4,7 @@ title    = "Cruzar"
 author   = "Jona"
 year     = 2026
 width    = 240
-height   = 208
+height   = 360
 blurb    = "salta entre autos, motos, trenes y troncos: cada cruce es un tramo nuevo y más rápido"
 controls = "flechas o wasd saltan · esc salir"
 
@@ -14,4 +14,4 @@ controls = "flechas o wasd saltan · esc salir"
 [game.touch]
 pad     = "4"
 swipe   = "once"               # deslizar salta: un salto por gesto
-hint    = "o desliza sobre el juego para saltar"
+hint    = "o desliza sobre el juego: un salto por gesto"

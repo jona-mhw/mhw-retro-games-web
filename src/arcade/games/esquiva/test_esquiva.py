@@ -5,14 +5,14 @@ partida termine sí o sí dentro de los dos minutos, con o sin jugador.
 """
 import random
 
-from games.esquiva.game import (AMMO0, AMMO_MAX, BUSCA, BUSCA_VALE, DURA,
+from games.esquiva.game import (BARRA, HUD, NUCLEO_H, PH, AMMO0, AMMO_MAX, BUSCA, BUSCA_VALE, DURA,
                                 FASES, FINAL_EN, FIRE_GAP, FRENESI, IMAN,
                                 JEFE_H, JEFE_HP, JEFE_VALE, JEFE_W,
                                 ESCUDO, Esquiva, GEM_CADENA_CADA,
                                 GEM_CADENA_MAX, GEM_VALE, H, NUCLEO_HP,
                                 NUCLEO_VALE, Nucleo, NUCLEO_Y, OH, PLAYER_Y,
                                 PW, RAFAGA, RALENTI, RAYO_AVISO, RAYO_W,
-                                RECARGA, ROCA, ROCE_DIST, ROCE_VALE,
+                                RECARGA, ROCA, ROCE_DIST, ROCE_VALE, SHOT_V,
                                 ROMPER_VALE, SLOW_F, TIME, VIDA, VIDAS, W,
                                 ZIGZAG)
 
@@ -60,6 +60,13 @@ def test_esquivar_suma():
     chk(e.score >= 1, "dejar pasar un bloque suma")
     chk(vieja not in e.rocks, "y ese bloque se va de la lista")
     chk(e.esquivados == 1, "y cuenta como esquivado")
+
+
+def test_la_arena_vertical_cabe():
+    chk(H / W >= 1.45 and 216 <= W <= 256, "la arena es vertical (%dx%d)" % (W, H))
+    chk(HUD < NUCLEO_Y and NUCLEO_Y + NUCLEO_H < PLAYER_Y - 100,
+        "el núcleo flota arriba, lejos de la nave")
+    chk(PLAYER_Y + PH + 8 <= BARRA, "la nave y su llama caben sobre el cargador")
 
 
 # --- vidas y gracia ----------------------------------------------------------
@@ -170,11 +177,11 @@ def test_la_bala_rompe_el_bloque():
 def test_el_bloque_duro_aguanta_dos():
     e = nueva()
     e.rocks = [[50, 50, 20, DURA, 0.0, 2]]
-    e.shots = [[55, 56]]
+    e.shots = [[55, 50 + SHOT_V + 1]]
     ev = e._mover_balas()
     chk(any(x[0] == "raspa" for x in ev), "el primer tiro sólo lo raspa")
     chk(e.rocks and e.rocks[0][5] == 1, "y le queda un golpe")
-    e.shots = [[55, 56]]
+    e.shots = [[55, 50 + SHOT_V + 1]]
     ev = e._mover_balas()
     chk(any(x[0] == "rompe" for x in ev), "el segundo sí lo rompe")
 
@@ -289,7 +296,7 @@ def test_el_buscador_te_sigue_y_paga():
         e.spawn_t = 10 ** 6
     chk(b[0] > 20, "el buscador se corre hacia la nave (%.0f)" % b[0])
     e.rocks = [[50, 50, 9, BUSCA, 0.0, 1, 0]]
-    e.shots = [[54, 55]]
+    e.shots = [[54, 50 + SHOT_V + 1]]
     s0 = e.score
     ev = e._mover_balas()
     chk(any(x[0] == "rompe" for x in ev), "un tiro lo rompe")
@@ -372,10 +379,10 @@ def test_el_jefe_aguanta_varios_tiros():
     e = nueva()
     e.jefe = [50.0, 60.0, JEFE_HP, 0.0]
     for i in range(JEFE_HP - 1):
-        e.shots = [[60.0, 66.0]]
+        e.shots = [[60.0, 60.0 + SHOT_V + 1]]
         e._mover_balas()
         chk(e.jefe is not None, "aguanta el tiro %d" % (i + 1))
-    e.shots = [[60.0, 66.0]]
+    e.shots = [[60.0, 60.0 + SHOT_V + 1]]
     ev = e._mover_balas()
     chk(e.jefe is None, "y cae al último")
     chk(any(x[0] == "jefe_cae" for x in ev), "avisando")
@@ -387,7 +394,7 @@ def test_el_jefe_suelta_premio_al_caer():
     e.jefe = [50.0, 60.0, 1, 0.0]
     e.powers = []
     e.gems = []
-    e.shots = [[60.0, 66.0]]
+    e.shots = [[60.0, 60.0 + SHOT_V + 1]]
     e._mover_balas()
     chk(any(p[2] == RAFAGA for p in e.powers), "el muro deja una ráfaga al caer")
     chk(len(e.gems) >= 3, "y gemas")
@@ -438,7 +445,7 @@ def test_romper_el_nucleo_gana_la_partida():
     e.nucleo.hp = 1
     e.rocks = [[10, 60, 16, ROCA, 0.0, 1, 0]]
     cx = e.nucleo.x + 10
-    e.shots = [[cx, e.nucleo.y + 5]]
+    e.shots = [[cx, e.nucleo.y + SHOT_V + 2]]
     s0 = e.score
     ev = e._mover_balas()
     chk(any(x[0] == "nucleo_cae" for x in ev), "el último tiro lo rompe")
@@ -458,7 +465,7 @@ def test_el_nucleo_aguanta_varios_tiros():
     e.nucleo = Nucleo()
     e.nucleo.y = NUCLEO_Y
     for _ in range(NUCLEO_HP - 1):
-        e.shots = [[e.nucleo.x + 10, e.nucleo.y + 5]]
+        e.shots = [[e.nucleo.x + 10, e.nucleo.y + SHOT_V + 2]]
         e._mover_balas()
     chk(e.nucleo is not None and e.nucleo.hp == 1,
         "aguanta %d tiros" % (NUCLEO_HP - 1))
@@ -548,7 +555,8 @@ def test_nada_queda_colgado():
 
 
 if __name__ == "__main__":
-    for fn in (test_inicio, test_no_se_sale_de_la_pantalla, test_esquivar_suma,
+    for fn in (test_inicio, test_la_arena_vertical_cabe,
+               test_no_se_sale_de_la_pantalla, test_esquivar_suma,
                test_el_golpe_saca_una_vida_no_la_partida,
                test_la_gracia_te_protege, test_sin_vidas_se_acaba,
                test_disparar_gasta_y_se_acaba,

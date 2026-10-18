@@ -3,8 +3,8 @@
 title    = "Esquiva"
 author   = "Jona"
 year     = 2026
-width    = 200
-height   = 220
+width    = 240
+height   = 360
 blurb    = "aguanta 100 segundos: oleadas, muros, rayos y un jefe final. las balas se recargan solas"
 controls = "flechas o mouse mueven · espacio dispara (mantén para disparar seguido) · esc salir"
 

@@ -6,7 +6,7 @@ toda la mecánica vive en la clase Cruce, sin pyxel.
 """
 import random
 
-from games.cruzar.game import (BOTTOM, CINTA, CLIMAX_T, CLIMAX_X, CRUCE_VALE,
+from games.cruzar.game import (BARRA, BOTTOM, CINTA, H, HUD, CLIMAX_T, CLIMAX_X, CRUCE_VALE,
                                Cruce, ESCUDO, HIELO, HIELO_TTL, HUNDE_ABAJO,
                                HUNDE_CICLO, ITEM_VALE, LANES, LANE_H, MOTO,
                                MONEDA_VALE, MULT_MAX, PASO_X, PW, RIO,
@@ -61,6 +61,13 @@ def test_el_trafico_da_la_vuelta():
         carril.step()
     chk(all(-carril.ancho <= x <= W + carril.ancho for x in carril.cosas),
         "el tráfico reaparece por el otro lado en vez de irse para siempre")
+
+
+def test_la_pantalla_vertical_cabe():
+    chk(H / W >= 1.45 and 216 <= W <= 256, "la pantalla es vertical (%dx%d)" % (W, H))
+    chk(TOP > HUD and BARRA + 8 <= H, "marcador, carriles, orilla y barra caben")
+    chk(all(len(plano) == LANES for _, plano in TRAMOS),
+        "todos los tramos traen sus %d carriles" % LANES)
 
 
 # --- moverse ------------------------------------------------------------------
@@ -548,7 +555,8 @@ def test_ningun_tramo_estira_el_reloj():
 
 if __name__ == "__main__":
     for fn in (test_hay_de_los_dos_tipos, test_el_carril_se_ubica_por_la_y,
-               test_el_trafico_da_la_vuelta, test_moverse_y_los_bordes,
+               test_el_trafico_da_la_vuelta, test_la_pantalla_vertical_cabe,
+               test_moverse_y_los_bordes,
                test_llegar_arriba_suma_y_te_devuelve, test_la_racha_multiplica,
                test_la_racha_se_enfria, test_el_trafico_te_atropella,
                test_la_gracia_te_protege, test_atropellarte_corta_la_racha,
