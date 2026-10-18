@@ -1,17 +1,18 @@
 """pruebas de pong, sin ventana: PYTHONPATH=. python -m games.pong.test_pong
 
-la física vive en la clase Pong, sin pyxel. lo que más importa acá: que ni el
-peloteo perfecto estire la partida más allá de dos minutos.
+la física vive en la clase Pong, sin pyxel. la cancha va parada: tú abajo
+(y grande), la máquina arriba, las paletas se mueven en x. lo que más importa
+acá: que ni el peloteo perfecto estire la partida más allá de dos minutos.
 """
 import random
 
-from games.pong.game import (BLINDADO, CORTA, COURT, CPU_TOPE, CX, ESCUDO,
-                             GANADOR_VALE, H, LADRILLOS, LADRILLO_VALE, LARGA,
-                             LENTO, MAQUINA, MAX_BALLS, MULTI, NUCLEO, ORO_T,
-                             PH_CORTA, PH_LARGA, PHALF, PUNTO_VALE, PX, Pong,
-                             RACHA_CADA, RACHA_VALE, RONDA_T, SAQUE,
-                             SMASH_CARGA, SMASH_V, SMASH_VENTANA, TIME, TO_WIN,
-                             TURBO, W, YO)
+from games.pong.game import (BLINDADO, CORTA, COURT, CPU_TOPE, ESCUDO,
+                             FACE_C, FACE_P, GANADOR_VALE, H, LAD_H, LAD_W,
+                             LADRILLOS, LADRILLO_VALE, LARGA, LENTO, MAQUINA,
+                             MAX_BALLS, MID, MULTI, NUCLEO, ORO_T, PH_CORTA,
+                             PH_LARGA, PHALF, PUNTO_VALE, Pong, RACHA_CADA,
+                             RACHA_VALE, RIEL, RONDA_T, SAQUE, SMASH_CARGA,
+                             SMASH_V, SMASH_VENTANA, TIME, TO_WIN, TURBO, W, YO)
 
 FALLAS = []
 DOS_MIN = 2 * 60 * 60
@@ -33,58 +34,59 @@ def test_inicio():
     chk(len(p.balls) == 1, "arranca con una pelota")
     chk(p.pscore == 0 and p.cscore == 0, "y el tanteo en cero")
     chk(p.time == TIME and not p.over, "y el round entero por delante")
+    chk(FACE_C < MID < FACE_P, "la máquina arriba, tú abajo")
 
 
 def test_la_paleta_no_se_sale():
     p = nueva()
     p.set_player(-999)
-    chk(p.py >= COURT + p.ph_p, "la paleta no se va por arriba")
+    chk(p.px >= RIEL + p.ph_p, "la paleta no se va por la izquierda")
     p.set_player(9999)
-    chk(p.py <= H - p.ph_p, "ni por abajo")
+    chk(p.px <= W - RIEL - p.ph_p, "ni por la derecha")
 
 
 def test_rebote_en_tu_paleta():
     p = nueva()
-    p.py = 80
-    p.balls = [[PX - 3, 80, 2.0, 0.0, 0]]
+    p.px = 120
+    p.balls = [[120, FACE_P - 3, 0.0, 2.0, 0]]
     p.step()
-    chk(p.balls[0][2] < 0, "la pelota se vuelve para el otro lado")
+    chk(p.balls[0][3] < 0, "la pelota se vuelve para arriba")
     chk(p.rallies == 1, "y suma al peloteo")
     chk(p.balls[0][4] == YO, "la pelota queda 'tuya'")
 
 
-def test_rebote_arriba_y_abajo():
+def test_rebote_en_las_bandas():
     p = nueva()
-    p.balls = [[W / 2, COURT + 2, 0.0, -2.0, 0]]
+    p.balls = [[RIEL + 4, MID, -2.0, 0.0, 0]]
     p.step()
-    chk(p.balls[0][3] > 0, "rebota contra el techo")
-    p.balls = [[W / 2, H - 2, 0.0, 2.0, 0]]
+    chk(p.balls[0][2] > 0, "rebota contra la banda izquierda")
+    p.balls = [[W - RIEL - 4, MID, 2.0, 0.0, 0]]
     p.step()
-    chk(p.balls[0][3] < 0, "y contra el piso")
+    chk(p.balls[0][2] < 0, "y contra la derecha")
 
 
 def test_el_punto_se_anota():
     p = nueva()
-    p.cy = H - 6                        # las paletas, lejos de la pelota, para
-    p.py = H - 6                        # que no la salven por accidente
-    p.balls = [[1, COURT + 4, -3.0, 0.0, 0]]
+    p.cx = W - 30                       # las paletas, lejos de la pelota, para
+    p.px = W - 30                       # que no la salven por accidente
+    p.balls = [[30, COURT + 1, 0.0, -3.0, 0]]
     p.step()
     chk(p.pscore == 1, "si se le pasa a la máquina, es tu punto")
     chk(p.score == PUNTO_VALE, "y el punto paga %d (%d)" % (PUNTO_VALE, p.score))
     p.saque = 0
-    p.balls = [[W - 1, COURT + 4, 3.0, 0.0, 0]]
+    p.balls = [[30, H - 1, 0.0, 3.0, 0]]
     p.step()
     chk(p.cscore == 1, "y al revés también")
 
 
 def test_la_maquina_persigue_pero_se_le_puede_ganar():
     p = nueva()
-    p.balls = [[W / 2, H - 6, -2.0, 0.0, 0]]
-    p.cy = COURT + 20
-    y0 = p.cy
+    p.balls = [[W - 30, COURT + 40, 0.0, -2.0, 0]]
+    p.cx = 40
+    x0 = p.cx
     for _ in range(10):
         p._mover_cpu()
-    chk(p.cy > y0, "la máquina va hacia la pelota")
+    chk(p.cx > x0, "la máquina va hacia la pelota")
     v0 = p.cpu_speed()
     p.rallies = 200
     chk(p.cpu_speed() > v0, "y se pone brava con el peloteo")
@@ -99,13 +101,13 @@ def test_la_maquina_persigue_pero_se_le_puede_ganar():
 def test_la_maquina_apunta_a_la_que_le_viene():
     """con multibola, seguir la equivocada es lo que la hace fallar."""
     p = nueva()
-    p.cy = (COURT + H) / 2
-    p.balls = [[W - 30, COURT + 5, 3.0, 0.0, 0],     # ésta se aleja
-               [60, H - 10, -2.0, 0.0, 0]]           # ésta le viene
-    y0 = p.cy
+    p.cx = W / 2
+    p.balls = [[20, COURT + 60, 0.0, 3.0, 0],       # ésta se aleja
+               [W - 20, COURT + 70, 0.0, -2.0, 0]]  # ésta le viene
+    x0 = p.cx
     for _ in range(6):
         p._mover_cpu()
-    chk(p.cy > y0, "persigue la que se le viene encima, no la otra")
+    chk(p.cx > x0, "persigue la que se le viene encima, no la otra")
 
 
 # --- poderes -----------------------------------------------------------------
@@ -145,15 +147,15 @@ def test_multibola():
 
 def test_turbo():
     p = nueva()
-    v0 = abs(p.balls[0][2])
+    v0 = abs(p.balls[0][3])
     p._tomar(TURBO, YO, [])
-    chk(abs(p.balls[0][2]) > v0, "el turbo acelera lo que hay en juego")
+    chk(abs(p.balls[0][3]) > v0, "el turbo acelera lo que hay en juego")
 
 
 def test_la_pelota_activa_la_caja():
     p = nueva()
-    p.powers = [[110, 90, LARGA, 300]]
-    p.balls = [[110, 90, 1.0, 0.0, YO]]
+    p.powers = [[120, 190, LARGA, 300]]
+    p.balls = [[120, 190, 0.0, -1.0, YO]]
     ev = p.step()
     chk(any(e[0] == "power" for e in ev), "pegarle a la caja la activa")
     chk(not p.powers, "y la caja desaparece")
@@ -162,29 +164,35 @@ def test_la_pelota_activa_la_caja():
 
 def test_la_caja_es_del_ultimo_que_toco():
     p = nueva()
-    p.powers = [[110, 90, LARGA, 300]]
-    p.balls = [[110, 90, -1.0, 0.0, MAQUINA]]
+    p.powers = [[120, 190, LARGA, 300]]
+    p.balls = [[120, 190, 0.0, 1.0, MAQUINA]]
     p.step()
     chk(p.ph_c == PH_LARGA // 2, "si venía de la máquina, el poder es suyo")
     chk(p.ph_p == PHALF, "y a ti no te toca nada")
 
 
 # --- el muro de ladrillos -----------------------------------------------------
+def _contra(l, vy=-2.0, dueño=YO):
+    """una pelota justo encima del ladrillo l."""
+    return [l[0] + LAD_W / 2, l[1] + LAD_H / 2, 0.0, vy, dueño]
+
+
 def test_el_muro_arranca_entero():
     p = nueva()
     chk(len(p.muro) == LADRILLOS, "el muro trae %d ladrillos" % LADRILLOS)
     chk(all(l[2] for l in p.muro), "y arrancan todos enteros")
-    chk(all(l[0] > CX for l in p.muro), "del lado de la máquina")
+    chk(all(l[1] < MID for l in p.muro), "del lado de la máquina")
+    chk(all(l[1] > FACE_C for l in p.muro), "delante de ella")
 
 
 def test_la_pelota_rompe_un_ladrillo():
     p = nueva()
     l = p.muro[4]
-    b = [l[0] + 1, l[1] + 3, -2.0, 0.0, YO]
+    b = _contra(l)
     ev = []
     chk(p._pegar_muro(b, ev), "la pelota pega en el ladrillo")
     chk(not l[2], "y lo rompe")
-    chk(b[2] > 0, "y sale rebotada hacia ti")
+    chk(b[3] > 0, "y sale rebotada hacia ti")
     chk(any(x[0] == "ladrillo" for x in ev), "avisando")
     chk(p.score >= LADRILLO_VALE, "y suma al puntaje (%d)" % p.score)
 
@@ -193,18 +201,15 @@ def test_el_ladrillo_roto_no_vuelve_a_pegar():
     p = nueva()
     l = p.muro[2]
     l[2] = 0
-    b = [l[0] + 1, l[1] + 3, -2.0, 0.0, YO]
-    chk(not p._pegar_muro(b, []), "un ladrillo ya roto deja pasar la pelota")
+    chk(not p._pegar_muro(_contra(l), []), "un ladrillo ya roto deja pasar la pelota")
 
 
 def test_el_muro_se_rearma():
     p = nueva()
     for l in p.muro[:-1]:
         l[2] = 0
-    ultimo = p.muro[-1]
-    b = [ultimo[0] + 1, ultimo[1] + 3, -2.0, 0.0, YO]
     ev = []
-    p._pegar_muro(b, ev)
+    p._pegar_muro(_contra(p.muro[-1]), ev)
     chk(any(x[0] == "muro_nuevo" for x in ev), "al caer el último, se rearma")
     chk(all(l[2] for l in p.muro), "y vuelve entero")
 
@@ -212,8 +217,7 @@ def test_el_muro_se_rearma():
 def test_el_muro_suma_aparte_del_peloteo():
     p = nueva()
     r0, s0 = p.rallies, p.score
-    l = p.muro[3]
-    p._pegar_muro([l[0] + 1, l[1] + 3, -2.0, 0.0, YO], [])
+    p._pegar_muro(_contra(p.muro[3]), [])
     chk(p.rallies == r0 + 1, "romper un ladrillo cuenta como devolución")
     chk(p.score == s0 + LADRILLO_VALE, "y el ladrillo paga %d" % LADRILLO_VALE)
 
@@ -222,19 +226,19 @@ def test_el_muro_suma_aparte_del_peloteo():
 def test_la_paleta_en_movimiento_da_efecto():
     p = nueva()
     p.muro = []
-    p.py = 80
-    p.set_player(86)                              # viene bajando rápido
-    p.balls = [[PX - 3, 84, 2.0, 0.0, 0]]
+    p.px = 120
+    p.set_player(128)                             # viene yendo a la derecha
+    p.balls = [[126, FACE_P - 3, 0.0, 2.0, 0]]
     p.step()
     b = p.balls[0]
-    chk(len(b) > 5 and b[5] > 0, "pegarle bajando deja comba positiva (%.2f)"
+    chk(len(b) > 5 and b[5] > 0, "pegarle en movimiento deja comba positiva (%.2f)"
         % (b[5] if len(b) > 5 else 0))
-    vy0 = b[3]
+    vx0 = b[2]
     for _ in range(20):
-        p.set_player(p.py)                        # quieta: no suma comba
+        p.set_player(p.px)                        # quieta: no suma comba
         p.step()
-    chk(b[3] > vy0, "y la pelota se va curvando hacia abajo (%.2f > %.2f)"
-        % (b[3], vy0))
+    chk(b[2] > vx0, "y la pelota se va curvando hacia la derecha (%.2f > %.2f)"
+        % (b[2], vx0))
     comba = b[5]
     for _ in range(200):
         p.step()
@@ -246,11 +250,19 @@ def test_la_paleta_en_movimiento_da_efecto():
 def test_paleta_quieta_no_da_efecto():
     p = nueva()
     p.muro = []
-    p.py = 80
-    p.set_player(80)
-    p.balls = [[PX - 3, 80, 2.0, 0.0, 0]]
+    p.px = 120
+    p.set_player(120)
+    p.balls = [[120, FACE_P - 3, 0.0, 2.0, 0]]
     p.step()
     chk(p.balls[0][5] == 0.0, "sin moverte, la pelota sale derecha")
+
+
+def _devolver(p, n):
+    """n devoluciones limpias, sin muro ni cajas que molesten."""
+    for _ in range(n):
+        p.balls = [[p.px, FACE_P - 3, 0.0, 2.0, 0]]
+        p.set_player(p.px)
+        p.step()
 
 
 def test_la_racha_paga_cada_diez():
@@ -258,15 +270,16 @@ def test_la_racha_paga_cada_diez():
     p.muro = []
     ev = []
     for i in range(RACHA_CADA):
-        p.balls = [[PX - 3, p.py, 2.0, 0.0, 0]]
-        p.set_player(p.py)
+        p.balls = [[p.px, FACE_P - 3, 0.0, 2.0, 0]]
+        p.set_player(p.px)
         ev += p.step()
     chk(p.racha == RACHA_CADA, "diez devoluciones seguidas hacen racha")
     chk(any(e[0] == "racha" and e[2] == RACHA_VALE for e in ev),
         "y pagan %d, avisando" % RACHA_VALE)
     chk(p.score == RACHA_CADA + RACHA_VALE, "y entra al puntaje (%d)" % p.score)
     s_racha = p.score
-    p.balls = [[W - 1, COURT + 4, 3.0, 0.0, 0]]  # la máquina te saca el punto
+    p.balls = [[30, H - 1, 0.0, 3.0, 0]]          # la máquina te saca el punto
+    p.px = W - 30
     ev = p.step()
     chk(p.racha == 0, "perder un punto corta la racha")
     chk(any(e[0] == "racha_rota" for e in ev), "y avisa que se cortó")
@@ -274,6 +287,13 @@ def test_la_racha_paga_cada_diez():
 
 
 # --- la cota de los dos minutos ----------------------------------------------
+def _perfecto(p):
+    """el jugador que nunca falla: va a la pelota que más baja."""
+    if p.balls:
+        objetivo = max(p.balls, key=lambda b: b[1])
+        p.set_player(objetivo[0])
+
+
 def test_la_partida_cabe_en_dos_minutos():
     """el caso que rompía el pong clásico: dos jugadores perfectos peloteando.
 
@@ -283,10 +303,8 @@ def test_la_partida_cabe_en_dos_minutos():
     p = nueva(seed=11)
     frames = 0
     while not p.over and frames < DOS_MIN + 600:
-        if p.balls:                                # jugador perfecto: nunca falla
-            objetivo = max(p.balls, key=lambda b: b[0])
-            p.set_player(objetivo[1])
-        p.cy = p.balls[0][1] if p.balls else p.cy  # y la máquina, tampoco
+        _perfecto(p)                               # jugador perfecto: nunca falla
+        p.cx = p.balls[0][0] if p.balls else p.cx  # y la máquina, tampoco
         p.step()
         frames += 1
     chk(p.over, "el peloteo perfecto también se termina")
@@ -301,12 +319,13 @@ def test_tambien_termina_por_puntos():
     p = nueva(seed=12)
     frames = 0
     while not p.over and frames < DOS_MIN:
-        p.py = COURT + p.ph_p                      # el jugador no juega
+        p.px = RIEL + p.ph_p                       # el jugador no juega
         p.step()
         frames += 1
     chk(p.over, "sin defender, la partida se acaba")
     chk(p.cscore >= TO_WIN or p.time == 0,
         "por goleada (%d) o por reloj" % p.cscore)
+    chk(frames <= DOS_MIN, "y en menos de dos minutos (%d)" % frames)
 
 
 def test_siempre_hay_pelota():
@@ -321,15 +340,21 @@ def test_siempre_hay_pelota():
             break
 
 
-# --- el smash ----------------------------------------------------------------
-def _devolver(p, n):
-    """n devoluciones limpias, sin muro ni cajas que molesten."""
-    for _ in range(n):
-        p.balls = [[PX - 3, p.py, 2.0, 0.0, 0]]
-        p.set_player(p.py)
+def test_la_pelota_no_se_escapa_de_la_cancha():
+    """con un jugador perfecto toda la partida, ninguna pelota sale por las
+    bandas: sólo se va por los arcos."""
+    p = nueva(seed=14)
+    while not p.over:
+        _perfecto(p)
+        p.pedir_smash()
         p.step()
+        for b in p.balls:
+            if not (RIEL <= b[0] <= W - RIEL):
+                chk(False, "la pelota se salió por la banda (x=%.1f)" % b[0])
+                return
 
 
+# --- el smash ----------------------------------------------------------------
 def test_el_smash_se_carga_y_se_pega():
     p = nueva()
     p.muro = []
@@ -338,11 +363,11 @@ def test_el_smash_se_carga_y_se_pega():
     chk(p.carga == SMASH_CARGA, "cada devolución carga el smash")
     chk(p.pedir_smash(), "con la carga llena, el botón abre la ventana")
     chk(p.smash_t > 0, "(la ventana queda abierta)")
-    p.balls = [[PX - 3, p.py, 2.0, 0.0, 0]]
+    p.balls = [[p.px, FACE_P - 3, 0.0, 2.0, 0]]
     ev = p.step()
     b = p.balls[0]
     chk(any(e[0] == "smash" for e in ev), "pegar dentro de la ventana es smash")
-    chk(b[2] == -SMASH_V, "la pelota sale rapidísima (%.1f)" % b[2])
+    chk(b[3] == -SMASH_V, "la pelota sale rapidísima (%.1f)" % b[3])
     chk(b[6] == YO, "y en llamas")
     chk(p.carga == 0, "y la carga se gasta")
 
@@ -351,7 +376,7 @@ def test_el_smash_errado_no_se_pierde():
     p = nueva()
     p.muro = []
     p.carga = SMASH_CARGA
-    p.balls = [[W / 2, 60, -2.0, 0.0, 0]]     # la pelota va para el otro lado
+    p.balls = [[W / 2, MID - 60, 0.0, -2.0, 0]]  # la pelota va para el otro lado
     chk(p.pedir_smash(), "se puede apretar en cualquier momento")
     for _ in range(SMASH_VENTANA + 2):
         p.step()
@@ -366,18 +391,18 @@ def test_el_smash_errado_no_se_pierde():
 def test_la_pelota_en_llamas_atraviesa_el_muro():
     p = nueva()
     l = p.muro[4]
-    b = [l[0] + 1, l[1] + 3, -SMASH_V, 0.0, YO, 0.0, YO, 0]
+    b = [l[0] + LAD_W / 2, l[1] + LAD_H / 2, 0.0, -SMASH_V, YO, 0.0, YO, 0]
     s0 = p.score
     chk(p._pegar_muro(b, []), "la pelota en llamas pega en el ladrillo")
     chk(not l[2], "y lo rompe")
-    chk(b[2] < 0, "pero no rebota: sigue hacia la máquina")
+    chk(b[3] < 0, "pero no rebota: sigue hacia la máquina")
     chk(p.score - s0 == 2 * LADRILLO_VALE, "y el ladrillo paga doble")
 
 
 def test_el_smash_ganador_paga_extra():
     p = nueva()
-    p.cy = H - 6
-    p.balls = [[1, COURT + 4, -SMASH_V, 0.0, YO, 0.0, YO, 0]]
+    p.cx = W - 30
+    p.balls = [[30, COURT + 1, 0.0, -SMASH_V, YO, 0.0, YO, 0]]
     ev = p.step()
     chk(any(e[0] == "ganador" for e in ev), "ganar el punto en llamas se avisa")
     chk(p.score == PUNTO_VALE + GANADOR_VALE, "y paga %d + %d (%d)"
@@ -390,10 +415,15 @@ def _derribar(p):
     n0 = p.muro_n
     for l in list(p.muro):
         while l[2] and p.muro_n == n0:
-            p._pegar_muro([l[0] + 1, l[1] + 3, -2.0, 0.0, YO], ev)
+            p._pegar_muro(_contra(l), ev)
         if p.muro_n != n0:
             break
     return ev
+
+
+def _adentro(l):
+    return RIEL <= l[0] and l[0] + LAD_W <= W - RIEL and \
+        FACE_C < l[1] and l[1] + LAD_H < MID
 
 
 def test_cada_muro_trae_otro_patron():
@@ -404,9 +434,8 @@ def test_cada_muro_trae_otro_patron():
         chk(any(e[0] == "muro_nuevo" for e in ev), "derribar el muro trae otro")
         vistos.append(p.nombre_muro())
         chk(all(l[2] for l in p.muro), "que viene entero")
-        chk(all(COURT <= l[1] and l[1] + 10 <= H for l in p.muro),
-            "y dentro de la cancha")
-        chk(all(l[0] > CX for l in p.muro), "del lado de la máquina")
+        chk(all(_adentro(l) for l in p.muro),
+            "dentro de la cancha, del lado de la máquina")
     chk(len(set(vistos)) == 4, "los cuatro patrones aparecen (%s)" % vistos)
 
 
@@ -419,7 +448,7 @@ def test_el_bunker_tiene_blindados_y_nucleo():
     n = next(l for l in p.muro if l[3] == NUCLEO)
     golpes = 0
     while n[2]:
-        p._pegar_muro([n[0] + 1, n[1] + 3, -2.0, 0.0, YO], [])
+        p._pegar_muro(_contra(n), [])
         golpes += 1
     chk(golpes == 3, "el núcleo aguanta tres golpes (%d)" % golpes)
 
@@ -428,15 +457,14 @@ def test_el_muro_movil_no_se_sale():
     p = nueva()
     p.muro_n = 2
     p._armar_muro()
-    chk(p.muro_vy != 0, "el muro móvil se mueve")
-    y0 = p.muro[0][1]
+    chk(p.muro_vx != 0, "el muro móvil se mueve")
+    x0 = p.muro[0][0]
     for _ in range(2000):
         p._mover_muro()
-        chk(all(COURT <= l[1] and l[1] + 10 <= H for l in p.muro),
-            "y nunca se sale de la cancha")
+        chk(all(_adentro(l) for l in p.muro), "y nunca se sale de la cancha")
         if FALLAS:
             break
-    chk(p.muro[0][1] != y0, "y de verdad se movió")
+    chk(p.muro[0][0] != x0, "y de verdad se movió")
 
 
 # --- rondas, oro, cámara lenta, escudo, saque ----------------------------------
@@ -444,8 +472,7 @@ def test_las_rondas_cambian_la_personalidad():
     p = nueva()
     vistas = []
     for _ in range(TIME):
-        if p.balls:                              # perfecto, para llegar al final
-            p.set_player(max(p.balls, key=lambda b: b[0])[1])
+        _perfecto(p)                             # perfecto, para llegar al final
         for e in p.step():
             if e[0] == "ronda":
                 vistas.append(e[1])
@@ -458,7 +485,7 @@ def test_el_tiempo_de_oro_vale_doble():
     p = nueva()
     p.muro = []
     p.time = ORO_T + 1
-    p.balls = [[W / 2, 60, -2.0, 0.0, 0]]
+    p.balls = [[W / 2, MID - 60, 0.0, -2.0, 0]]
     ev = p.step()
     chk(p.oro and any(e[0] == "oro" for e in ev), "los últimos 15 s son de oro")
     s0 = p.score
@@ -470,21 +497,21 @@ def test_camara_lenta_en_el_punto_decisivo():
     p = nueva()
     p.muro = []
     p.cscore = TO_WIN - 1
-    p.py = COURT + p.ph_p                      # tu paleta, lejos
-    p.balls = [[W - 50, H - 20, 2.5, 0.0, MAQUINA]]
+    p.px = RIEL + p.ph_p                       # tu paleta, lejos
+    p.balls = [[W - 30, H - 75, 0.0, 3.8, MAQUINA]]
     t0 = p.time
     ev = []
     for _ in range(4):
         ev += p.step()
     chk(any(e[0] == "lento" for e in ev), "la pelota decisiva va en cámara lenta")
     chk(p.lento > 0, "(y dura un rato)")
-    x0 = p.balls[0][0]
+    y0 = p.balls[0][1]
     p.step()
-    chk(p.balls[0][0] - x0 < 1.5, "la pelota va lenta (%.2f px)" % (p.balls[0][0] - x0))
+    chk(p.balls[0][1] - y0 < 2.0, "la pelota va lenta (%.2f px)" % (p.balls[0][1] - y0))
     chk(p.time == t0 - 5, "pero el reloj baja igual: uno por frame")
     p2 = nueva()
-    p2.py = COURT + p2.ph_p
-    p2.balls = [[W - 50, H - 20, 2.5, 0.0, MAQUINA]]
+    p2.px = RIEL + p2.ph_p
+    p2.balls = [[W - 30, H - 75, 0.0, 3.8, MAQUINA]]
     ev = []
     for _ in range(4):
         ev += p2.step()
@@ -495,31 +522,31 @@ def test_la_muralla_salva_una_vez():
     p = nueva()
     p.muro = []
     p._tomar(ESCUDO, YO, [])
-    p.py = COURT + p.ph_p
-    p.balls = [[W - 2, H - 20, 3.0, 0.0, 0]]
+    p.px = RIEL + p.ph_p
+    p.balls = [[W - 30, H - 2, 0.0, 4.0, 0]]
     ev = p.step()
     chk(any(e[0] == "escudo" for e in ev), "la muralla salva la pelota")
-    chk(p.cscore == 0 and p.balls[0][2] < 0, "y la devuelve")
-    p.balls = [[W - 2, H - 20, 3.0, 0.0, 0]]
+    chk(p.cscore == 0 and p.balls[0][3] < 0, "y la devuelve")
+    p.balls = [[W - 30, H - 2, 0.0, 4.0, 0]]
     p.step()
     chk(p.cscore == 1, "pero una sola vez")
 
 
 def test_el_saque_espera_y_el_reloj_no():
     p = nueva()
-    p.cy = H - 6
-    p.py = H - 6
-    p.balls = [[1, COURT + 4, -3.0, 0.0, 0]]
+    p.cx = W - 30
+    p.px = W - 30
+    p.balls = [[30, COURT + 1, 0.0, -3.0, 0]]
     p.step()
     chk(p.saque == SAQUE, "tras el punto, la pelota espera en el medio")
-    x0, t0 = p.balls[0][0], p.time
+    y0, t0 = p.balls[0][1], p.time
     for _ in range(SAQUE - 1):
         p.step()
-    chk(p.balls[0][0] == x0, "quieta durante el saque")
+    chk(p.balls[0][1] == y0, "quieta durante el saque")
     chk(p.time == t0 - (SAQUE - 1), "con el reloj corriendo")
     p.step()
     p.step()
-    chk(p.balls[0][0] != x0, "y después sale")
+    chk(p.balls[0][1] != y0, "y después sale")
 
 
 def test_ni_el_smash_estira_el_reloj():
@@ -529,9 +556,7 @@ def test_ni_el_smash_estira_el_reloj():
         p = nueva(seed=seed)
         frames = 0
         while not p.over and frames < DOS_MIN + 600:
-            if p.balls:
-                objetivo = max(p.balls, key=lambda b: b[0])
-                p.set_player(objetivo[1])
+            _perfecto(p)
             p.pedir_smash()
             p.step()
             frames += 1
@@ -540,9 +565,35 @@ def test_ni_el_smash_estira_el_reloj():
         chk(p.smashes >= 3, "(y smasheó de verdad: %d)" % p.smashes)
 
 
+def test_un_cruce_tarda_lo_de_siempre():
+    """la cancha creció, pero un saque tarda en llegar a tu arco lo mismo que
+    en la cancha acostada (~1,8 s): el ritmo de la partida no cambió."""
+    p = nueva(seed=5)
+    p.muro = []
+    p.balls = [[W / 2, MID, 0.0, 2.8, 0]]
+    p.power_t = 10 ** 6
+    f = 0
+    while p.balls and p.balls[0][1] < FACE_P - 3 and f < 400:
+        p.step()
+        f += 1
+    chk(40 <= f <= 80, "de la red a tu paleta: %d frames" % f)
+
+
+def test_la_pantalla_va_parada():
+    """en el celular vertical llena la pantalla: ancho de 216 a 256 px y alto
+    entre 1,45 y 1,6 veces el ancho (y el game.toml dice lo mismo)."""
+    import os
+    import tomllib
+    chk(216 <= W <= 256 and 1.45 <= H / W <= 1.6, "%dx%d va parada" % (W, H))
+    with open(os.path.join(os.path.dirname(__file__), "game.toml"), "rb") as f:
+        g = tomllib.load(f)["game"]
+    chk((g["width"], g["height"]) == (W, H), "y el game.toml lo sabe (%sx%s)"
+        % (g["width"], g["height"]))
+
+
 if __name__ == "__main__":
-    for fn in (test_inicio, test_la_paleta_no_se_sale, test_rebote_en_tu_paleta,
-               test_rebote_arriba_y_abajo, test_el_punto_se_anota,
+    for fn in (test_la_pantalla_va_parada, test_inicio, test_la_paleta_no_se_sale, test_rebote_en_tu_paleta,
+               test_rebote_en_las_bandas, test_el_punto_se_anota,
                test_la_maquina_persigue_pero_se_le_puede_ganar,
                test_la_maquina_apunta_a_la_que_le_viene,
                test_la_larga_y_la_corta, test_el_efecto_caduca, test_multibola,
@@ -557,6 +608,7 @@ if __name__ == "__main__":
                test_el_muro_suma_aparte_del_peloteo,
                test_la_partida_cabe_en_dos_minutos,
                test_tambien_termina_por_puntos, test_siempre_hay_pelota,
+               test_la_pelota_no_se_escapa_de_la_cancha,
                test_el_smash_se_carga_y_se_pega,
                test_el_smash_errado_no_se_pierde,
                test_la_pelota_en_llamas_atraviesa_el_muro,
@@ -569,7 +621,8 @@ if __name__ == "__main__":
                test_camara_lenta_en_el_punto_decisivo,
                test_la_muralla_salva_una_vez,
                test_el_saque_espera_y_el_reloj_no,
-               test_ni_el_smash_estira_el_reloj):
+               test_ni_el_smash_estira_el_reloj,
+               test_un_cruce_tarda_lo_de_siempre):
         fn()
     print()
     print("=== TODO OK ===" if not FALLAS else "=== %d FALLAS ===" % len(FALLAS))

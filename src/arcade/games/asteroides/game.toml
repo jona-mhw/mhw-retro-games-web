@@ -1,10 +1,11 @@
 # manifiesto del juego. el id es el nombre de la carpeta (games/asteroides).
+# la arena va parada: en el celular vertical llena la pantalla.
 [game]
 title    = "Asteroides"
 author   = "Jona"
 year     = 2026
-width    = 256
-height   = 208
+width    = 240
+height   = 360
 blurb    = "oleadas de piedra, minas que estallan en cadena, cometas y una tormenta final"
 controls = "izq/der giran · arriba empuja · abajo frena · espacio dispara (mantén) · c auto-fuego"
 

@@ -3,6 +3,7 @@
 el clásico de vectores, con inercia de verdad: la nave gira sobre su eje y
 empuja hacia donde mira, así que frenar es girar 180° y acelerar (o el freno).
 la pantalla da la vuelta por los cuatro lados, para ti y para las piedras.
+la arena va parada, como el teléfono: en el celular vertical llena la pantalla.
 
 lo que le sumamos al original:
 
@@ -33,28 +34,29 @@ input ya leído y devuelve qué pasó.
 """
 import math
 import random
+import weakref
 
 import pyxel
 
 from pixelkit import fx, scores, web
 from pixelkit.arcade import Cabinet, UIColors
-from pixelkit.pxtext import ctext, text
+from pixelkit.pxtext import big_ctext, big_text, big_width, text
 
-W, H = 256, 208
-HUD = 18
+W, H = 240, 360
+HUD = 30
 FIELD_TOP = HUD
 
 TIME = 90 * 60                   # el round entero: nada lo estira
 VIDAS = 3
 GRACIA = 110
 
-SHIP_R = 6                       # radio de choque de la nave
+SHIP_R = 7                       # radio de choque de la nave
 TURN = 0.098
-THRUST = 0.135
+THRUST = 0.15
 DRAG = 0.988                     # el espacio casi no frena: eso es la gracia
-MAXV = 3.2
-SHOT_V = 4.4
-SHOT_TTL = 46
+MAXV = 3.6
+SHOT_V = 5.0
+SHOT_TTL = 52
 # la cadencia es lo único que limita el disparo: no hay munición ni tope de
 # tiros en pantalla. mantener apretado dispara cada DISPARO_GAP frames, siempre
 DISPARO_GAP = 8
@@ -63,9 +65,9 @@ FRENO = 0.72                     # un toque de freno
 FRENO_SOSTENIDO = 0.9            # por frame, mientras se mantiene
 
 GRANDE, MEDIANA, CHICA = 2, 1, 0
-RADIO = {GRANDE: 15, MEDIANA: 9, CHICA: 5}
+RADIO = {GRANDE: 18, MEDIANA: 11, CHICA: 6}
 VALE = {GRANDE: 20, MEDIANA: 30, CHICA: 50}
-VEL = {GRANDE: 0.42, MEDIANA: 0.72, CHICA: 1.15}
+VEL = {GRANDE: 0.47, MEDIANA: 0.8, CHICA: 1.28}
 
 # las oleadas
 OLEADA_GAP = 20 * 60             # si no la limpias, la siguiente entra igual
@@ -75,18 +77,19 @@ TOPE_ROCAS = 34                  # para que dos oleadas encimadas no exploten
 
 CAZADOR_GAP = 16 * 60
 CAZADOR_VALE = 150
-CAZADOR_V = 0.9
+CAZADOR_V = 1.0
 CAZADOR_TIRO = 90
+CAZADOR_R = 9                    # radio del platillo
 
-MINA_R = 5
-MINA_ONDA = 38                   # radio de la explosión
+MINA_R = 6
+MINA_ONDA = 46                   # radio de la explosión
 MINA_VALE = 40
-MINA_V = 0.22
+MINA_V = 0.25
 
 COMETA_GAP = 12 * 60
 COMETA_AVISO = 60
-COMETA_V = 3.0
-COMETA_R = 5
+COMETA_V = 3.4
+COMETA_R = 6
 COMETA_VALE = 120
 
 TRIPLE, ESCUDO, RAFAGA, NOVA = range(4)
@@ -97,7 +100,8 @@ RAFAGA_TTL = 7 * 60
 POWER_TTL = 9 * 60
 POWER_CHANCE = 0.16              # probabilidad de que una chica deje un poder
 MINA_POWER = 0.35                # y una mina
-NOVA_R = 64
+NOVA_R = 76
+POWER_R = 8                      # radio de la cápsula
 
 # el combo: roturas seguidas. si pasa más de COMBO_TTL entre una y otra, se
 # enfría. el techo evita que un campo lleno de chicas valga una fortuna.
@@ -112,26 +116,10 @@ COMBO_MAX = 5
 DORADA_GAP = 17 * 60
 DORADA_TTL = 7 * 60
 DORADA_VALE = 250
-DORADA_V = 1.7
+DORADA_V = 1.9
 
 TORMENTA = 15 * 60               # los últimos 15 s
 TORMENTA_GAP = 100               # cada cuánto cae piedra extra
-
-(BG, STAR1, STAR2, SHIP1, SHIP2, FLAME, ROCK1, ROCK2, ROCK3, SHOT, TXT, DIM,
- ACCENT, WARN, SHADOW, WHITE, NEON, NEON2, PINK, GOLD, HUNTER, HUNTER2,
- SHIELDC, GRID, PANEL, MINE, COMET) = range(27)
-PAL = [
-    0x0B0A16, 0x1E1B3A, 0x2E2A55, 0x38E8E0, 0xA8FFF8, 0xFF8A3A, 0x8E86B0,
-    0xC0B8DC, 0x6A6294, 0xFFF3B0, 0xE8ECF5, 0x8A80B8, 0x38E8E0, 0xE04A2A,
-    0x060512, 0xF2F5FB, 0xFF6EC7, 0xB03A8E, 0xE868C8, 0xFFD24A, 0x9AE84A,
-    0x4E8E28, 0x7ADCFF, 0x171430, 0x110F24, 0xFF4040, 0xFFB050,
-] + [0] * (256 - 27)
-
-CHISPA_ROCA = (WHITE, ROCK2, ROCK1, ROCK3)
-CHISPA_NAVE = (WHITE, SHIP2, SHIP1, NEON)
-CHISPA_CAZA = (WHITE, GOLD, HUNTER, HUNTER2)
-CHISPA_MINA = (WHITE, GOLD, MINE, FLAME, WARN)
-CHISPA_COMETA = (WHITE, GOLD, COMET, FLAME)
 
 # lo que trae cada oleada, además de las grandes: (grandes, minas, novedad)
 OLEADAS = {1: (3, 0, "rompe las piedras"),
@@ -225,7 +213,7 @@ class Cazador:
         self.rng = rng
         self.t = CAZADOR_TIRO
         self.vida = 2
-        self.vy = rng.choice((-0.35, 0.35))
+        self.vy = rng.choice((-0.4, 0.4))
 
     def step(self, tx, ty):
         dx = tx - self.x
@@ -233,7 +221,7 @@ class Cazador:
             dx = -dx
         self.x += CAZADOR_V * (1 if dx > 0 else -1)
         self.y += self.vy
-        if self.y < FIELD_TOP + 8 or self.y > H - 8:
+        if self.y < FIELD_TOP + 10 or self.y > H - 10:
             self.vy = -self.vy
         self.x, self.y = envolver(self.x, self.y)
         self.t -= 1
@@ -286,7 +274,7 @@ class Espacio:
         self._nueva_oleada([])
 
     # --- poblar ----------------------------------------------------------
-    def _lejos(self, minimo=70):
+    def _lejos(self, minimo=80):
         for _ in range(30):
             x = self.rng.uniform(0, W)
             y = self.rng.uniform(FIELD_TOP, H)
@@ -295,7 +283,7 @@ class Espacio:
         return 4.0, float(FIELD_TOP + 4)
 
     def _soltar_roca(self, tam, dorada=False):
-        x, y = self._lejos(72)
+        x, y = self._lejos(84)
         self.rocas.append(Roca(x, y, tam, self.rng.uniform(0, math.tau), self.rng,
                                dorada=dorada))
 
@@ -311,7 +299,7 @@ class Espacio:
         for _ in range(min(grandes, max(1, lugar))):
             self._soltar_roca(GRANDE)
         for _ in range(max(0, minas - len(self.minas))):
-            x, y = self._lejos(80)
+            x, y = self._lejos(92)
             self.minas.append(Mina(x, y, self.rng))
         if n == 4 and self.cazador is None:
             self.caza_t = 90                  # el cazador llega con la 4
@@ -482,7 +470,7 @@ class Espacio:
                 ev.append(("cometa", c.x, c.y, vale))
                 return True
         if self.cazador and \
-                dist2(t[0], t[1], self.cazador.x, self.cazador.y) < 64:
+                dist2(t[0], t[1], self.cazador.x, self.cazador.y) < CAZADOR_R ** 2:
             self.cazador.vida -= 1
             if self.cazador.vida <= 0:
                 self._bajar_cazador(ev)
@@ -567,14 +555,14 @@ class Espacio:
                 return                        # llega con la oleada 4
             self.caza_t -= 1
             if self.caza_t <= 0:
-                x, y = self._lejos(90)
+                x, y = self._lejos(104)
                 self.cazador = Cazador(x, y, self.rng)
                 ev.append(("caza_entra", x, y))
             return
         a = self.cazador.step(self.x, self.y)
         if a is not None:
             self.tiros.append([self.cazador.x, self.cazador.y,
-                               math.cos(a) * 2.4, math.sin(a) * 2.4,
+                               math.cos(a) * 2.7, math.sin(a) * 2.7,
                                SHOT_TTL * 2, 0])
             ev.append(("caza_tira", self.cazador.x, self.cazador.y))
 
@@ -646,7 +634,7 @@ class Espacio:
                 self._golpe(ev, self.x, self.y)
                 return
         if self.cazador and dist2(self.x, self.y, self.cazador.x,
-                                  self.cazador.y) < (SHIP_R + 7) ** 2:
+                                  self.cazador.y) < (SHIP_R + CAZADOR_R - 1) ** 2:
             self._golpe(ev, self.x, self.y)
 
     def _powers(self, ev):
@@ -655,7 +643,7 @@ class Espacio:
             p[3] -= 1
             if p[3] <= 0:
                 continue
-            if dist2(self.x, self.y, p[0], p[1]) < (SHIP_R + 7) ** 2:
+            if dist2(self.x, self.y, p[0], p[1]) < (SHIP_R + POWER_R) ** 2:
                 self._tomar(p[2], ev)
             else:
                 quedan.append(p)
@@ -673,57 +661,241 @@ class Espacio:
             self._onda(self.x, self.y, NOVA_R, ev)
 
 
-# --- texto grande ------------------------------------------------------------
-# la fuente de pyxel tiene 4x6. el puntaje y los carteles van al doble, para
-# que se lean en el celular: cada glifo se lee una vez de una imagen chica.
-_GLIFOS = {}
-_TILDES = {"á": "a", "é": "e", "í": "i", "ó": "o", "ú": "u", "Á": "A",
-           "É": "E", "Í": "I", "Ó": "O", "Ú": "U"}
+# --- la piel -----------------------------------------------------------------
+# la paleta: rampas de 4-5 tonos (brillo, luz, medio, sombra, contorno).
+(BG, SHADOW, WHITE, TXT, DIM, PANEL, PANEL2, GRID,
+ # el cielo: degradé de arriba (azul noche) a abajo (violeta), y la nebulosa
+ SKY0, SKY1, SKY2, SKY3, NEB0, NEB1, NEB2, NEB3, NEBB0, NEBB1, NEBB2,
+ # estrellas
+ STAR0, STAR1, STAR2, STAR3,
+ # el planeta del fondo
+ PLA0, PLA1, PLA2,
+ # la nave: casco, cabina y su acento
+ SHIP0, SHIP1, SHIP2, SHIP3, GLASS, GLASS2, ACCENT, NEON2,
+ # la piedra (contorno, sombra, medio, luz, brillo)
+ ROCK0, ROCK1, ROCK2, ROCK3, ROCK4,
+ # oro y fuego
+ GOLD0, GOLD1, GOLD, GOLD3, FLAME, EMBER, SMOKE,
+ # el resto
+ SHOT, PINK, PINK2, WARN, WARN2, HUNTER0, HUNTER, HUNTER2, SHIELDC, MINE0,
+ MINE, COMET) = range(58)
+PAL = [
+    0x07060F, 0x030208, 0xFFFFFF, 0xE8ECF5, 0x8A80B8, 0x0C0A1C, 0x18143A,
+    0x262050,
+    0x060716, 0x0A0B22, 0x110D2C, 0x180F34, 0x1A0B2A, 0x2A0F3C, 0x3E1650,
+    0x5A2068, 0x0C1838, 0x132654, 0x1C3A72,
+    0x2A2850, 0x5A5890, 0x9A98D0, 0xE8E8FF,
+    0x120E26, 0x241A44, 0x3E2C66,
+    0x0E2E3A, 0x1A7A86, 0x38E8E0, 0xB8FFF8, 0x2A6AD8, 0x9AD8FF, 0x38E8E0,
+    0xB03A8E,
+    0x0E0A1A, 0x2E2846, 0x524A78, 0x7E76AA, 0xB4ACD8,
+    0x5A3A0E, 0xA8741E, 0xFFD24A, 0xFFF4B0, 0xFF8A3A, 0xC0401E, 0x2A2238,
+    0xFFF3B0, 0xFF6EC7, 0xE868C8, 0xE04A2A, 0x7A1A14, 0x24481A, 0x9AE84A,
+    0xD4FFA0, 0x7ADCFF, 0x5A0A10, 0xFF4040, 0xFFB050,
+]
+assert len(PAL) == COMET + 1
+PAL += [0] * (256 - len(PAL))
+
+ROCA_R = (ROCK0, ROCK1, ROCK2, ROCK3, ROCK4)    # contorno -> brillo
+ORO_R = (GOLD0, GOLD0, GOLD1, GOLD, GOLD3)
+CHISPA_ROCA = (WHITE, ROCK4, ROCK3, ROCK2, ROCK1)
+CHISPA_NAVE = (WHITE, SHIP3, SHIP2, SHIP1)
+CHISPA_CAZA = (WHITE, GOLD, HUNTER, HUNTER0)
+CHISPA_MINA = (WHITE, GOLD3, GOLD, FLAME, EMBER)
+CHISPA_COMETA = (WHITE, GOLD3, COMET, FLAME)
+CHISPA_ORO = (WHITE, GOLD3, GOLD, PINK)
+LUZ = -2.356                      # la luz viene de arriba a la izquierda
+OLA_COL = (ACCENT, MINE, COMET, HUNTER, PINK)
+FIELD_H = H - FIELD_TOP
 
 
-def _glifo(ch):
-    g = _GLIFOS.get(ch)
-    if g is None:
-        if ch == "¡":                  # no está en la fuente: el ! dado vuelta
-            g = [(x, 4 - y) for x, y in _glifo("!")]
-        elif ch in _TILDES:
-            g = _glifo(_TILDES[ch]) + [(2, -2), (1, -1)]
-        else:
-            img = pyxel.Image(8, 8)
-            img.cls(0)
-            img.text(0, 0, ch, 1)
-            g = [(x, y) for y in range(6) for x in range(4)
-                 if img.pget(x, y) == 1]
-        _GLIFOS[ch] = g
-    return g
+class Fx(fx.Fx):
+    """el Fx de pixelkit con los carteles en letra grande: cada popup puede
+    traer su escala (el "+50" de cada piedra va chico, los avisos al doble)."""
+
+    def __init__(self, *a, **kw):
+        super().__init__(*a, **kw)
+
+    def pop(self, x, y, s, col, life=38, k=2):
+        self.popup(x, y, s, col, life=life)
+        self.pops[-1].append(k)
+
+    def draw(self, camx=0, camy=0):
+        pops, self.pops = self.pops, []
+        try:
+            super().draw(camx, camy)
+        finally:
+            self.pops = pops
+        for q in pops:
+            x, y, s, col, vida, vida0 = q[0], q[1], q[3], q[4], q[5], q[6]
+            if vida < vida0 * 0.35 and (self.t // 3) % 2:
+                continue
+            k = q[7] if len(q) > 7 else 2
+            half = big_width(s, k) // 2 + 2
+            x = max(half, min(W - half, x))
+            y = max(FIELD_TOP + 2, min(H - 6 * k - 2, y))
+            big_ctext(x, int(y), s, col, scale=k, shadow=SHADOW)
 
 
-def big(x, y, s, col, sombra=None, k=2):
-    x, y = int(x), int(y)
-    rect = pyxel.rect
-    if sombra is not None:
-        for i, ch in enumerate(s):
-            gx = x + i * 4 * k
-            for px, py in _glifo(ch):
-                rect(gx + px * k + 1, y + py * k + 1, k, k, sombra)
-    for i, ch in enumerate(s):
-        gx = x + i * 4 * k
-        for px, py in _glifo(ch):
-            rect(gx + px * k, y + py * k, k, k, col)
+_FONDO = []
+# la matriz de Bayer 4x4, para tramar a mano donde dither() no alcanza
+_BAYER = [v / 16 for v in (0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5)]
 
 
-def big_w(s, k=2):
-    return len(s) * 4 * k - k
+def _fondo():
+    """el espacio, horneado una vez: degradé, nebulosa, estrellas lejanas, un
+    planeta y el panel del HUD. por frame es un solo blt."""
+    if _FONDO:
+        return _FONDO[0]
+    rng = random.Random(7)
+    img = pyxel.Image(W, H)
+    img.cls(SKY0)
+    tonos = (SKY0, SKY1, SKY2, SKY3)
+    for y in range(FIELD_TOP, H):
+        t = (y - FIELD_TOP) / FIELD_H
+        nivel = min(2.999, t * 3.0)
+        i = int(nivel)
+        img.line(0, y, W, y, tonos[i])
+        img.dither(nivel - i)
+        img.line(0, y, W, y, tonos[i + 1])
+        img.dither(1.0)
+    # la nebulosa: nubes de círculos tramados, más densas en el centro de
+    # cada brazo. una violeta que cruza en diagonal y una azul arriba
+    for cx0, cy0, dx, dy, n, rmax, ramp in (
+            (-10, 250, 2.1, -1.1, 70, 34, (NEB0, NEB1, NEB2, NEB3)),
+            (250, 90, -1.7, 0.5, 46, 26, (NEBB0, NEBB0, NEBB1, NEBB2))):
+        for i in range(n):
+            f = i / n
+            x = cx0 + dx * i * 2.0 + rng.uniform(-14, 14)
+            y = cy0 + dy * i * 2.0 + rng.uniform(-14, 14)
+            r = rmax * (0.4 + 0.6 * (1 - abs(f - 0.5) * 2)) * rng.uniform(0.6, 1.1)
+            for capa, (alfa, kr) in enumerate(((0.25, 1.0), (0.3, 0.7),
+                                               (0.35, 0.45), (0.4, 0.22))):
+                img.dither(alfa)
+                img.circ(x, y, r * kr, ramp[capa])
+    img.dither(1.0)
+    # un planeta lejano, abajo a la derecha: una esfera sombreada píxel por
+    # píxel (luz de arriba a la izquierda) con tramado ordenado entre tonos,
+    # y su anillo, que pasa por delante abajo y por detrás arriba
+    px, py, pr = W - 22, H - 62, 40
+    lx, ly, lz = -0.55, -0.55, 0.63
+    tonos_p = (SKY3, PLA0, PLA1, PLA2, NEB2)
+    for dy in range(-pr, pr + 1):
+        for dx in range(-pr, pr + 1):
+            d2 = dx * dx + dy * dy
+            if d2 > pr * pr or not (0 <= px + dx < W and FIELD_TOP <= py + dy < H):
+                continue
+            nz = math.sqrt(pr * pr - d2) / pr
+            luz = max(0.0, (dx / pr) * lx + (dy / pr) * ly + nz * lz)
+            nivel = 0.6 + luz * 3.2
+            k = int(nivel)
+            if nivel - k > _BAYER[(dy & 3) * 4 + (dx & 3)]:
+                k += 1
+            img.pset(px + dx, py + dy, tonos_p[min(4, k)])
+    for i in range(-pr - 22, pr + 23):
+        x = px + i
+        y = py + int(i * 0.3) + 4
+        detras = (x - px) ** 2 + (y - py) ** 2 <= pr * pr and i > 0
+        if not detras and 0 <= x < W and y < H:
+            img.pset(x, y, PLA2 if i < 0 else PLA1)
+            if i % 2 == 0:
+                img.pset(x, y + 1, PLA0)
+    # estrellas lejanas: casi todas apenas, unas pocas con brillo en cruz
+    for i in range(170):
+        x, y = rng.randrange(W), rng.randrange(FIELD_TOP, H)
+        c = STAR0 if i % 4 else STAR1
+        img.pset(x, y, c)
+    for i in range(9):
+        x, y = rng.randrange(8, W - 8), rng.randrange(FIELD_TOP + 8, H - 8)
+        img.pset(x, y, STAR3)
+        for d in (1, 2):
+            c = STAR2 if d == 1 else STAR1
+            img.pset(x - d, y, c)
+            img.pset(x + d, y, c)
+            img.pset(x, y - d, c)
+            img.pset(x, y + d, c)
+    # el HUD: un panel con su filo
+    img.rect(0, 0, W, HUD, PANEL)
+    img.dither(0.5)
+    img.rect(0, 0, W, 15, PANEL2)
+    img.dither(1.0)
+    img.rect(0, HUD - 1, W, 1, SHADOW)
+    _FONDO.append(img)
+    return img
 
 
-def cbig(cx, y, s, col, sombra=None, k=2):
-    big(cx - big_w(s, k) / 2, y, s, col, sombra, k)
+def _envolturas(x, y, r):
+    """dónde dibujar algo de radio r: si asoma por un borde, también del otro
+    lado (el campo da la vuelta y así no aparece de golpe)."""
+    xs = [0]
+    if x - r < 0:
+        xs.append(W)
+    elif x + r > W:
+        xs.append(-W)
+    ys = [0]
+    if y - r < FIELD_TOP:
+        ys.append(FIELD_H)
+    elif y + r > H:
+        ys.append(-FIELD_H)
+    return [(dx, dy) for dx in xs for dy in ys]
+
+
+def _tono(ang, ramp):
+    """el tono de una cara según hacia dónde mira: de cara a la luz, brillo;
+    de espaldas, sombra."""
+    b = math.cos(ang - LUZ)
+    if b > 0.72:
+        return ramp[4]
+    if b > 0.2:
+        return ramp[3]
+    if b > -0.35:
+        return ramp[2]
+    return ramp[1]
+
+
+ROCA_PASOS = 64                   # pasos de giro que se pintan
+ROCA_PASO = math.tau / ROCA_PASOS
+ROCA_IMG = 2 * int(RADIO[GRANDE] * 1.3 + 2) + 2
+
+
+def _pintar_roca(img, roca, rot):
+    """la piedra, facetada, en su imagen: cada cara se pinta según cuánto
+    mira a la luz (arriba a la izquierda), con contorno oscuro y un filo de
+    luz del lado iluminado. los cráteres giran con ella."""
+    ramp = ORO_R if roca.dorada else ROCA_R
+    img.cls(BG)
+    r = roca.r
+    n = len(roca.forma)
+    paso = math.tau / n
+    c = ROCA_IMG // 2
+    angs = [rot + i * paso for i in range(n)]
+    pts = [(c + math.cos(a) * r * f, c + math.sin(a) * r * f)
+           for a, f in zip(angs, roca.forma)]
+    for i in range(n):
+        x0, y0 = pts[i]
+        x1, y1 = pts[(i + 1) % n]
+        img.tri(c, c, x0, y0, x1, y1, _tono(angs[i] + paso / 2, ramp))
+    for i in range(n):
+        x0, y0 = pts[i]
+        x1, y1 = pts[(i + 1) % n]
+        filo = math.cos(angs[i] + paso / 2 - LUZ) > 0.55
+        img.line(x0, y0, x1, y1, ramp[4] if filo else ramp[0])
+    for j in range(roca.tam):                     # cráteres
+        a = rot + 1.3 + j * 2.4
+        d = r * (0.35 + 0.15 * j)
+        kx, ky = int(c + math.cos(a) * d), int(c + math.sin(a) * d)
+        kr = 1 + (roca.tam - j) // 2 + (r > 15)
+        # hundido: el borde de abajo a la derecha agarra luz y la pared de
+        # arriba a la izquierda queda en sombra
+        img.circ(kx, ky, kr, ramp[3])
+        img.circ(kx - 1, ky - 1, kr, ramp[1])
 
 
 class World:
     def __init__(self):
         self.e = Espacio()
-        self.fx = fx.Fx(gravity=0.0)
+        _fondo()                      # se hornea una vez, durante la cuenta 3-2-1
+        self.fx = Fx(gravity=0.0, max_parts=240)
         self.thrust = False
         self.touch = web.is_touch()
         # en el celular el auto-fuego viene prendido: un pulgar gira, el otro
@@ -731,10 +903,18 @@ class World:
         self.auto = self.touch
         self.auto_fx = 0
         self.ondas = []               # [x, y, r, rmax] anillos de explosión
+        self.bolas = []               # [x, y, r, vida, vida0] fogonazos
+        self.humo = []                # [x, y, r, vida, vida0]
+        self.cascos = []              # [x, y, vx, vy, ang, giro, tam, vida, vida0, ramp]
+        self.sprites = weakref.WeakKeyDictionary()   # roca -> (imagen, paso)
         self.cartel = None
         self.hud_golpe = 0
-        self.estrellas = [(i * 71 % W, FIELD_TOP + (i * 37) % (H - FIELD_TOP),
-                           STAR1 if i % 3 else STAR2) for i in range(46)]
+        self.camx = self.camy = 0.0   # para el paralaje de las estrellas
+        rng = random.Random(3)
+        self.capas = [
+            [(rng.uniform(0, W), rng.uniform(0, FIELD_H), STAR1) for _ in range(34)],
+            [(rng.uniform(0, W), rng.uniform(0, FIELD_H),
+              STAR3 if i % 3 == 0 else STAR2) for i in range(18)]]
         try:
             lst = scores.top("asteroides", 1)
             self.record = lst[0]["score"] if lst else 0
@@ -742,6 +922,7 @@ class World:
             self.record = 0
         self.record_visto = self.record <= 0
         self._efecto(("oleada", 1, OLEADAS[1][2]))
+        self.cartel[2] -= 10          # el primero ya entra quieto: se ve en la cuenta
 
     @property
     def over(self):
@@ -759,30 +940,46 @@ class World:
         if pyxel.btnp(pyxel.KEY_C) or pyxel.btnp(pyxel.KEY_Z):
             self.auto = not self.auto
             self.auto_fx = 50
-            self.fx.popup(W / 2, H - 24, "AUTO-FUEGO SÍ" if self.auto
-                          else "AUTO-FUEGO NO", ACCENT if self.auto else TXT,
-                          life=50)
+            self.fx.pop(W / 2, H - 40, "AUTO-FUEGO SÍ" if self.auto
+                        else "AUTO-FUEGO NO", ACCENT if self.auto else TXT,
+                        life=50)
         fire = self.auto or pyxel.btn(pyxel.KEY_SPACE) or pyxel.btn(pyxel.KEY_X)
         if pyxel.btnp(pyxel.KEY_DOWN) or pyxel.btnp(pyxel.KEY_S):
             e.frenar()
-            self.fx.burst(e.x, e.y, (WHITE, SHIELDC, DIM), n=8, speed=1.4,
+            self.fx.burst(e.x, e.y, (WHITE, GLASS2, DIM), n=10, speed=1.6,
                           life=12)
         elif pyxel.btn(pyxel.KEY_DOWN) or pyxel.btn(pyxel.KEY_S):
             e.frenar(FRENO_SOSTENIDO)
         for ev in e.step(rot, self.thrust, fire):
             self._efecto(ev)
-        if self.thrust and pyxel.frame_count % 2 == 0:
+        self.camx += e.vx
+        self.camy += e.vy
+        if self.thrust and e.lives > 0:
             back = e.a + math.pi
-            self.fx.burst(e.x + math.cos(back) * 7, e.y + math.sin(back) * 7,
-                          (WHITE, FLAME, WARN), n=2, speed=0.8, life=12,
-                          spread=0.8, angle=back)
+            self.fx.burst(e.x + math.cos(back) * 8, e.y + math.sin(back) * 8,
+                          (WHITE, GOLD3, FLAME, EMBER), n=2, speed=1.0, life=12,
+                          spread=0.7, angle=back)
         if e.mult() >= 3 and pyxel.frame_count % 3 == 0:   # la nave en racha
             self.fx.burst(e.x, e.y, (PINK, NEON2), n=1, speed=0.3, life=14)
         for c in e.cometas:
             if not c.aviso and pyxel.frame_count % 2 == 0:
                 self.fx.burst(c.x, c.y, CHISPA_COMETA, n=2, speed=0.5, life=16,
                               spread=0.9, angle=math.atan2(-c.vy, -c.vx))
-        self.ondas = [[x, y, r + 3, rm] for x, y, r, rm in self.ondas if r < rm]
+        self.ondas = [[x, y, r + 3.2, rm] for x, y, r, rm in self.ondas if r < rm]
+        self.bolas = [[x, y, r, v - 1, v0] for x, y, r, v, v0 in self.bolas if v > 1]
+        self.humo = [[x, y - 0.12, r + 0.25, v - 1, v0]
+                     for x, y, r, v, v0 in self.humo if v > 1]
+        vivos = []
+        for c in self.cascos:
+            c[0] += c[2]
+            c[1] += c[3]
+            c[2] *= 0.97
+            c[3] *= 0.97
+            c[4] += c[5]
+            c[7] -= 1
+            if c[7] > 0:
+                vivos.append(c)
+        self.cascos = vivos
         for campo in ("hud_golpe", "auto_fx"):
             v = getattr(self, campo)
             if v:
@@ -793,58 +990,84 @@ class World:
                 self.cartel = None
         if not self.record_visto and e.score > self.record:
             self.record_visto = True
-            self.fx.popup(W / 2, FIELD_TOP + 50, "¡NUEVO RÉCORD!", GOLD, life=70)
-            self.fx.burst(W / 2, FIELD_TOP + 50, (WHITE, GOLD, PINK), n=24,
-                          speed=2.4, life=28)
+            self.fx.pop(W / 2, FIELD_TOP + 60, "¡NUEVO RÉCORD!", GOLD, life=70)
+            self.fx.burst(W / 2, FIELD_TOP + 60, (WHITE, GOLD, PINK), n=28,
+                          speed=2.6, life=28)
             self.fx.destello(GOLD)
         self.fx.update()
 
     def _cartel(self, tit, sub, col, frames=100):
         self.cartel = [tit, sub, frames, col, frames]
 
+    def _estallido(self, x, y, r, n_cascos, ramp, humo=True):
+        """la explosión: fogonazo, anillo, pedazos que giran y humo."""
+        self.bolas.append([x, y, r, 8, 8])
+        self.ondas.append([x, y, 3, r * 1.6 + 8])
+        for i in range(n_cascos):
+            if len(self.cascos) >= 90:
+                break
+            a = random.uniform(0, math.tau)
+            v = random.uniform(0.5, 1.6) * (1.2 if r < 8 else 1.0)
+            self.cascos.append([x + math.cos(a) * r * 0.4, y + math.sin(a) * r * 0.4,
+                                math.cos(a) * v, math.sin(a) * v,
+                                random.uniform(0, math.tau),
+                                random.uniform(-0.25, 0.25),
+                                random.choice((2, 2, 3, 4)) if r > 8 else 2,
+                                random.randint(26, 46), 46, ramp])
+        if humo:
+            for i in range(2 + int(r // 6)):
+                if len(self.humo) >= 30:
+                    break
+                self.humo.append([x + random.uniform(-r, r) * 0.5,
+                                  y + random.uniform(-r, r) * 0.5,
+                                  r * 0.4 + 2, 34, 34])
+
     def _efecto(self, ev):
         k = ev[0]
         if k == "rompe":
             x, y, tam, vale = ev[1], ev[2], ev[3], ev[4]
-            self.fx.burst(x, y, CHISPA_ROCA, n=8 + tam * 6, speed=1.5 + tam * 0.4,
+            r = RADIO[tam]
+            self.fx.burst(x, y, CHISPA_ROCA, n=8 + tam * 7, speed=1.6 + tam * 0.5,
                           life=20 + tam * 4)
-            self.fx.popup(x, y - 8, "+%d" % vale, NEON if tam else GOLD)
+            self._estallido(x, y, r, 3 + tam * 3, ROCA_R)
+            self.fx.pop(x, y - r - 8, "+%d" % vale, ACCENT if tam else GOLD,
+                        k=1)
             self.fx.shake(1 + tam)
         elif k == "combo":
-            self.fx.popup(ev[1], ev[2] - 18, "¡COMBO x%d!" % ev[3], PINK)
+            self.fx.pop(ev[1], ev[2] - 26, "¡COMBO x%d!" % ev[3], PINK)
             self.fx.destello(PINK)
         elif k == "combo_frio":
-            self.fx.popup(W / 2, FIELD_TOP + 22, "combo frío", TXT)
+            self.fx.pop(W / 2, FIELD_TOP + 26, "combo frío", TXT, k=1)
         elif k == "oleada":
             n, nota = ev[1], ev[2]
-            self._cartel("OLEADA %d" % n, nota, (ACCENT, MINE, COMET, HUNTER,
-                                                  PINK)[min(n, 5) - 1])
+            self._cartel("OLEADA %d" % n, nota, OLA_COL[min(n, 5) - 1])
             if n > 1:
                 self.fx.destello(ACCENT)
         elif k == "oleada_limpia":
             self._cartel("¡LIMPIA!", "oleada %d despejada  +%d" % (ev[1], ev[2]),
                          GOLD, RESPIRO)
             self.fx.burst(W / 2, (FIELD_TOP + H) / 2, (WHITE, GOLD, ACCENT),
-                          n=40, speed=3.0, life=34)
+                          n=46, speed=3.2, life=34)
             self.fx.destello(GOLD)
         elif k == "tormenta":
             self._cartel("¡TORMENTA!", "15 segundos · todo vale doble", WARN, 110)
             self.fx.shake(6)
             self.fx.destello(WARN, 6)
         elif k == "dorada_entra":
-            self.fx.popup(W / 2, FIELD_TOP + 34, "¡DORADA!", GOLD)
+            self.fx.pop(W / 2, FIELD_TOP + 40, "¡DORADA!", GOLD)
             self.fx.destello(GOLD)
         elif k == "dorada":
-            self.fx.burst(ev[1], ev[2], (WHITE, GOLD, PINK, SHOT), n=36,
-                          speed=3.0, life=36)
-            self.fx.popup(ev[1], ev[2] - 10, "+%d" % ev[3], GOLD)
+            self.fx.burst(ev[1], ev[2], CHISPA_ORO, n=40, speed=3.2, life=36)
+            self._estallido(ev[1], ev[2], 10, 6, ORO_R, humo=False)
+            self.fx.pop(ev[1], ev[2] - 18, "+%d" % ev[3], GOLD)
             self.fx.shake(5)
             self.fx.destello(GOLD)
         elif k == "dorada_ida":
             self.fx.burst(ev[1], ev[2], (GOLD, DIM), n=8, speed=1.0, life=14)
         elif k == "mina":
-            self.fx.burst(ev[1], ev[2], CHISPA_MINA, n=30, speed=2.8, life=28)
-            self.fx.popup(ev[1], ev[2] - 10, "+%d" % ev[3], MINE)
+            self.fx.burst(ev[1], ev[2], CHISPA_MINA, n=34, speed=3.0, life=28)
+            self._estallido(ev[1], ev[2], 14, 4, (MINE0, MINE0, WARN2, MINE, GOLD))
+            self.fx.pop(ev[1], ev[2] - 18, "+%d" % ev[3], MINE)
             self.fx.shake(6)
             self.fx.destello(FLAME)
         elif k == "onda":
@@ -852,36 +1075,42 @@ class World:
         elif k == "cometa_aviso":
             pass                                  # el aviso se dibuja solo
         elif k == "cometa":
-            self.fx.burst(ev[1], ev[2], CHISPA_COMETA, n=30, speed=2.6, life=30)
-            self.fx.popup(ev[1], ev[2] - 10, "+%d" % ev[3], COMET)
+            self.fx.burst(ev[1], ev[2], CHISPA_COMETA, n=34, speed=2.8, life=30)
+            self._estallido(ev[1], ev[2], 10, 0, ORO_R, humo=False)
+            self.fx.pop(ev[1], ev[2] - 18, "+%d" % ev[3], COMET)
             self.fx.shake(4)
             self.fx.destello(COMET)
         elif k == "caza":
-            self.fx.burst(ev[1], ev[2], CHISPA_CAZA, n=34, speed=2.8, life=34)
-            self.fx.popup(ev[1], ev[2] - 10, "+%d" % ev[3], GOLD)
+            self.fx.burst(ev[1], ev[2], CHISPA_CAZA, n=38, speed=3.0, life=34)
+            self._estallido(ev[1], ev[2], 14, 8,
+                            (HUNTER0, HUNTER0, HUNTER, HUNTER2, WHITE))
+            self.fx.pop(ev[1], ev[2] - 18, "+%d" % ev[3], GOLD)
             self.fx.shake(6)
             self.fx.destello(GOLD)
         elif k == "caza_entra":
             self._cartel("¡CAZADOR!", "te persigue y dispara", HUNTER, 80)
             self.fx.destello(HUNTER)
         elif k == "golpe":
-            self.fx.burst(ev[1], ev[2], CHISPA_NAVE, n=32, speed=2.6, life=32)
-            self.fx.popup(ev[1], ev[2] - 14, "-1 NAVE", WARN, life=40)
+            self.fx.burst(ev[1], ev[2], CHISPA_NAVE, n=36, speed=2.8, life=32)
+            self._estallido(ev[1], ev[2], 12, 7,
+                            (SHIP0, SHIP0, SHIP1, SHIP2, SHIP3))
+            self.fx.pop(ev[1], ev[2] - 22, "-1 NAVE", WARN, life=40)
             self.fx.shake(7)
             self.fx.destello(WARN, 6)
             self.hud_golpe = 36
         elif k == "escudo_roto":
-            self.fx.burst(ev[1], ev[2], (WHITE, SHIELDC, NEON), n=22, speed=2.2,
+            self.fx.burst(ev[1], ev[2], (WHITE, SHIELDC, GLASS2), n=24, speed=2.4,
                           life=26)
-            self.fx.popup(ev[1], ev[2] - 12, "¡te salvó el escudo!", SHIELDC)
+            self.ondas.append([ev[1], ev[2], 6, 30])
+            self.fx.pop(ev[1], ev[2] - 22, "¡te salvó el escudo!", SHIELDC, k=1)
             self.fx.shake(3)
         elif k == "power":
-            self.fx.burst(ev[1], ev[2], (WHITE, GOLD, PINK), n=18, speed=2.0,
+            self.fx.burst(ev[1], ev[2], (WHITE, GOLD, PINK), n=20, speed=2.2,
                           life=24)
-            self.fx.popup(ev[1], ev[2] - 12, POWER_NOMBRE[ev[3]], GOLD)
+            self.fx.pop(ev[1], ev[2] - 22, POWER_NOMBRE[ev[3]], GOLD)
             self.fx.destello(GOLD)
         elif k == "chispa":
-            self.fx.burst(ev[1], ev[2], (WHITE, GOLD, HUNTER), n=5, speed=1.2,
+            self.fx.burst(ev[1], ev[2], (WHITE, GOLD, HUNTER), n=6, speed=1.3,
                           life=12)
         elif k == "tiro":
             pass
@@ -893,68 +1122,131 @@ class World:
         e = self.e
         fc = pyxel.frame_count
         sx, sy = self.fx.offset()
-        pyxel.cls(BG)
+        # el fondo no tiembla: tiembla lo que está encima, y se lee igual
+        pyxel.blt(0, FIELD_TOP, _fondo(), 0, FIELD_TOP, W, FIELD_H)
+        pyxel.clip(0, FIELD_TOP, W, FIELD_H)
+        self._estrellas()
         pyxel.camera(-sx, -sy)
-        for x, y, c in self.estrellas:
-            pyxel.pset(x, y, c)
         if e.tormenta() and (fc // 10) % 2:            # el borde late
-            pyxel.rectb(0, FIELD_TOP, W, H - FIELD_TOP, WARN)
-        for x, y, r, rm in self.ondas:
-            pyxel.circb(int(x), int(y), int(r), GOLD if r < rm * 0.6 else FLAME)
+            pyxel.rectb(0, FIELD_TOP, W, FIELD_H, WARN)
+            pyxel.rectb(1, FIELD_TOP + 1, W - 2, FIELD_H - 2, WARN2)
+        self._humo()
         for p in e.powers:
             self._power(p)
         for m in e.minas:
             self._mina(m)
         for roca in e.rocas:
             self._roca(roca)
+        self._cascos()
         for c in e.cometas:
             self._cometa(c)
-        for t in e.tiros:
-            pyxel.rect(int(t[0]) - 1, int(t[1]) - 1, 2, 2,
-                       SHOT if t[5] else HUNTER)
+        self._tiros()
         if e.cazador:
             self._cazador(e.cazador)
         if e.lives > 0 and (not e.gracia or (fc // 4) % 2):
             self._nave(e)
+        self._explosiones()
         self.fx.draw(0, 0)
         pyxel.camera()
-        self.fx.draw_flash(0, FIELD_TOP, W, H - FIELD_TOP)
+        pyxel.clip()
+        self.fx.draw_flash(0, FIELD_TOP, W, FIELD_H)
         self._dibujar_cartel()
+        pyxel.blt(0, 0, _fondo(), 0, 0, W, HUD)
         self._hud()
 
+    def _estrellas(self):
+        """dos capas de estrellas que se corren al revés de la nave, a
+        distinto ritmo: lo de cerca pasa más rápido (paralaje)."""
+        fc = pyxel.frame_count
+        for capa, k in ((self.capas[0], 0.12), (self.capas[1], 0.3)):
+            ox = -self.camx * k
+            oy = -self.camy * k + fc * k * 0.25        # una deriva suave
+            for i, (x, y, c) in enumerate(capa):
+                xx = int((x + ox) % W)
+                yy = FIELD_TOP + int((y + oy) % FIELD_H)
+                if k > 0.2 and (fc // 12 + i) % 9 == 0:
+                    c = STAR1                            # titila
+                pyxel.pset(xx, yy, c)
+                if k > 0.2 and i % 3 == 0:
+                    pyxel.pset(xx + 1, yy, STAR1)
+
+    def _humo(self):
+        for x, y, r, v, v0 in self.humo:
+            pyxel.dither(0.45 * v / v0)
+            pyxel.circ(int(x), int(y), int(r), SMOKE)
+        pyxel.dither(1.0)
+
+    def _explosiones(self):
+        for x, y, r, rm in self.ondas:
+            f = r / rm
+            c = WHITE if f < 0.25 else GOLD3 if f < 0.5 else GOLD if f < 0.75 \
+                else FLAME
+            pyxel.circb(int(x), int(y), int(r), c)
+            if f < 0.7:
+                pyxel.dither(0.5)
+                pyxel.circb(int(x), int(y), int(r) - 2, FLAME)
+                pyxel.dither(1.0)
+        for x, y, r, v, v0 in self.bolas:
+            f = v / v0                                   # 1 -> 0
+            rr = r * (0.5 + 0.7 * (1 - f))
+            if f > 0.6:
+                pyxel.circ(int(x), int(y), int(rr), GOLD3)
+                pyxel.circ(int(x), int(y), int(rr * 0.6), WHITE)
+            else:
+                pyxel.dither(0.3 + f)
+                pyxel.circ(int(x), int(y), int(rr), FLAME if f > 0.3 else EMBER)
+                pyxel.circ(int(x), int(y), int(rr * 0.5), GOLD)
+                pyxel.dither(1.0)
+
+    def _cascos(self):
+        tri = pyxel.tri
+        for x, y, vx, vy, a, giro, t, v, v0, ramp in self.cascos:
+            if v < 10 and v % 2:
+                continue
+            ca, sa = math.cos(a) * t, math.sin(a) * t
+            p0 = (x + ca, y + sa)
+            p1 = (x - ca * 0.6 - sa, y - sa * 0.6 + ca)
+            p2 = (x - ca * 0.6 + sa, y - sa * 0.6 - ca)
+            tri(*p0, *p1, *p2, _tono(a, ramp))
+            pyxel.pset(int(p0[0]), int(p0[1]), ramp[4] if v > 20 else ramp[2])
+
     def _roca(self, roca):
-        """la piedra, como polígono irregular: vectorial, a tono con la casa."""
-        pts = []
-        n = len(roca.forma)
-        for i, f in enumerate(roca.forma):
-            a = roca.rot + i * math.tau / n
-            pts.append((roca.x + math.cos(a) * roca.r * f,
-                        roca.y + math.sin(a) * roca.r * f))
-        col = (ROCK3, ROCK1, ROCK2)[roca.tam]
-        if roca.dorada:
-            if roca.ttl < 90 and (pyxel.frame_count // 4) % 2:
-                return                                  # titila antes de irse
-            col = GOLD if (pyxel.frame_count // 3) % 2 else SHOT
-        for i in range(n):
-            x0, y0 = pts[i]
-            x1, y1 = pts[(i + 1) % n]
-            if abs(x0 - x1) < W / 2 and abs(y0 - y1) < H / 2:
-                pyxel.line(int(x0), int(y0), int(x1), int(y1), col)
+        """la piedra ya pintada (ver `_pintar_roca`), con un solo blt. se
+        vuelve a pintar sólo cuando giró un paso: casi nunca por frame."""
+        if roca.dorada and roca.ttl < 90 and (pyxel.frame_count // 4) % 2:
+            return                                      # titila antes de irse
+        paso = int(roca.rot / ROCA_PASO) % ROCA_PASOS
+        hit = self.sprites.get(roca)
+        if hit is None or hit[1] != paso:
+            img = hit[0] if hit else pyxel.Image(ROCA_IMG, ROCA_IMG)
+            _pintar_roca(img, roca, paso * ROCA_PASO)
+            self.sprites[roca] = hit = (img, paso)
+        h = ROCA_IMG // 2
+        for dx, dy in _envolturas(roca.x, roca.y, roca.r * 1.3):
+            x, y = int(roca.x + dx) - h, int(roca.y + dy) - h
+            pyxel.blt(x, y, hit[0], 0, 0, ROCA_IMG, ROCA_IMG, BG)
+            if roca.dorada and (pyxel.frame_count // 5) % 3 == 0:
+                pyxel.pset(x + h - 3, y + h - 3, WHITE)
 
     def _mina(self, m):
         x, y = int(m.x), int(m.y)
-        cerca = dist2(m.x, m.y, self.e.x, self.e.y) < 50 * 50
+        cerca = dist2(m.x, m.y, self.e.x, self.e.y) < 56 * 56
         per = 4 if cerca else 12
         luz = (m.fase // per) % 2
-        for a in range(4):                               # las púas
-            ang = a * math.pi / 2 + m.fase * 0.02
-            pyxel.line(x, y, int(x + math.cos(ang) * 7),
-                       int(y + math.sin(ang) * 7), MINE)
-        pyxel.circ(x, y, 3, MINE)
-        pyxel.circb(x, y, 4, WARN)
-        pyxel.pset(x, y, WHITE if luz else GOLD)
+        for a in range(6):                               # las púas
+            ang = a * math.pi / 3 + m.fase * 0.02
+            ex, ey = x + math.cos(ang) * 9, y + math.sin(ang) * 9
+            pyxel.line(x, y, ex, ey, MINE0)
+            pyxel.pset(int(ex), int(ey), MINE if luz else WARN)
+        pyxel.circ(x, y, MINA_R, MINE0)
+        pyxel.circ(x, y, MINA_R - 1, WARN2)
+        pyxel.circ(x - 1, y - 1, MINA_R - 2, MINE)
+        pyxel.circ(x - 2, y - 2, 1, COMET)
+        pyxel.rect(x - 1, y - 1, 2, 2, WHITE if luz else GOLD)
         if luz and cerca:
+            pyxel.dither(0.5)
             pyxel.circb(x, y, MINA_ONDA // 3, WARN)
+            pyxel.dither(1.0)
 
     def _cometa(self, c):
         fc = pyxel.frame_count
@@ -964,7 +1256,7 @@ class World:
             ang = math.atan2(c.vy, c.vx)
             ca, sa = math.cos(ang), math.sin(ang)
             # la ruta punteada, siempre: por dónde va a pasar
-            for i in range(3, 60):
+            for i in range(3, 90):
                 if (i + fc // 2) % 3:
                     continue
                 px_ = int(c.x + ca * i * 4)
@@ -973,68 +1265,111 @@ class World:
                     pyxel.rect(px_, py_, 2, 2, COMET)
             if (fc // (6 if c.aviso > 25 else 2)) % 2:
                 return
-            x = max(6, min(W - 7, c.x))
-            y = max(FIELD_TOP + 6, min(H - 7, c.y))
-            p0 = (x + ca * 6, y + sa * 6)
-            p1 = (x - ca * 4 - sa * 5, y - sa * 4 + ca * 5)
-            p2 = (x - ca * 4 + sa * 5, y - sa * 4 - ca * 5)
-            pyxel.tri(p0[0], p0[1], p1[0], p1[1], p2[0], p2[1], COMET)
-            pyxel.text(int(x + ca * 10) - 1, int(y + sa * 10) - 2, "!", WHITE)
+            x = max(8, min(W - 9, c.x))
+            y = max(FIELD_TOP + 8, min(H - 9, c.y))
+            p0 = (x + ca * 8, y + sa * 8)
+            p1 = (x - ca * 5 - sa * 7, y - sa * 5 + ca * 7)
+            p2 = (x - ca * 5 + sa * 7, y - sa * 5 - ca * 7)
+            pyxel.tri(*p0, *p1, *p2, COMET)
+            pyxel.trib(*p0, *p1, *p2, WHITE)
+            big_ctext(int(x + ca * 16), int(y + sa * 16) - 6, "!", WHITE,
+                      scale=2, shadow=SHADOW)
             return
-        x, y = int(c.x), int(c.y)
-        k = 5
-        pyxel.line(x, y, int(c.x - c.vx * k), int(c.y - c.vy * k), FLAME)
-        pyxel.line(x, y, int(c.x - c.vx * k * 0.6), int(c.y - c.vy * k * 0.6),
-                   COMET)
-        pyxel.circ(x, y, 3, COMET)
-        pyxel.circ(x, y, 1, WHITE)
+        x, y = c.x, c.y
+        for i in range(9, 0, -1):                        # la cola, de lejos a cerca
+            f = i / 9
+            tx, ty = x - c.vx * i * 1.6, y - c.vy * i * 1.6
+            col = (GOLD3, COMET, FLAME, EMBER)[min(3, int(f * 4))]
+            pyxel.circ(int(tx), int(ty), max(1, int((1 - f) * 5)), col)
+        pyxel.circ(int(x), int(y), 5, COMET)
+        pyxel.circ(int(x), int(y), 3, GOLD3)
+        pyxel.circ(int(x) - 1, int(y) - 1, 1, WHITE)
+
+    def _tiros(self):
+        line = pyxel.line
+        for t in self.e.tiros:
+            x, y = t[0], t[1]
+            if t[5]:
+                line(x - t[2] * 0.9, y - t[3] * 0.9, x, y, GOLD)
+                pyxel.rect(int(x) - 1, int(y) - 1, 2, 2, SHOT)
+            else:
+                pyxel.circ(int(x), int(y), 2, HUNTER0)
+                pyxel.circ(int(x), int(y), 1, HUNTER)
+                pyxel.pset(int(x), int(y), WHITE)
 
     def _nave(self, e):
         cosa, sina = math.cos(e.a), math.sin(e.a)
+        fc = pyxel.frame_count
 
         def p(f, s):
-            return (int(e.x + f * cosa - s * sina), int(e.y + f * sina + s * cosa))
+            return (e.x + f * cosa - s * sina, e.y + f * sina + s * cosa)
 
-        morro, izq, der, cola = p(9, 0), p(-6, -5), p(-6, 5), p(-3, 0)
-        col = SHIP2 if e.escudo else SHIP1
-        pyxel.tri(*morro, *izq, *cola, GRID)
-        pyxel.tri(*morro, *der, *cola, GRID)
-        pyxel.line(*morro, *izq, col)
-        pyxel.line(*morro, *der, col)
-        pyxel.line(*izq, *cola, col)
-        pyxel.line(*der, *cola, col)
-        if self.thrust and (pyxel.frame_count // 2) % 2:
-            pyxel.line(*cola, *p(-11, 0), FLAME)
+        tri = pyxel.tri
+        morro, izq, der, cola = p(11, 0), p(-7, -7), p(-7, 7), p(-4, 0)
+        # el contorno: la misma silueta un poco más grande, oscura
+        tri(*p(13, 0), *p(-8.5, -8.5), *p(-5, 0), SHIP0)
+        tri(*p(13, 0), *p(-8.5, 8.5), *p(-5, 0), SHIP0)
+        # las dos mitades del casco, cada una con el tono que le da la luz
+        rampa = (SHIP0, SHIP1, SHIP1, SHIP2, SHIP3)
+        tri(*morro, *izq, *cola, _tono(e.a - math.pi / 2, rampa))
+        tri(*morro, *der, *cola, _tono(e.a + math.pi / 2, rampa))
+        # la quilla y las alas con su franja
+        pyxel.line(*morro, *cola, SHIP3)
+        pyxel.line(*p(-1, -3), *p(-6, -6), NEON2)
+        pyxel.line(*p(-1, 3), *p(-6, 6), NEON2)
+        # la cabina
+        cx, cy = p(3, 0)
+        pyxel.circ(cx, cy, 2, GLASS)
+        gx, gy = p(4, -1)
+        pyxel.pset(gx, gy, GLASS2)
+        # las toberas, y la llama cuando empuja
+        for s in (-2.5, 2.5):
+            tx, ty = p(-5, s)
+            pyxel.pset(tx, ty, SHADOW)
+        if self.thrust:
+            largo = 16 + (fc % 3) * 2
+            tri(*p(-5, -3), *p(-5, 3), *p(-largo, 0), EMBER)
+            tri(*p(-5, -2.2), *p(-5, 2.2), *p(-largo + 3, 0), FLAME)
+            tri(*p(-5, -1.2), *p(-5, 1.2), *p(-largo + 8, 0), GOLD3)
+            pyxel.pset(*p(-5, 0), WHITE)
         if e.escudo:
-            pyxel.circb(int(e.x), int(e.y), 11 + (pyxel.frame_count // 8) % 2,
-                        SHIELDC)
+            r = 14 + (fc // 8) % 2
+            pyxel.dither(0.5)
+            pyxel.circb(int(e.x), int(e.y), r - 2, SHIELDC)
+            pyxel.dither(1.0)
+            pyxel.circb(int(e.x), int(e.y), r, GLASS2)
+            a = fc * 0.1
+            pyxel.pset(int(e.x + math.cos(a) * r), int(e.y + math.sin(a) * r), WHITE)
         if e.triple:
-            for s in (-4, 4):
-                pyxel.pset(*p(7, s), NEON)
+            for s in (-5, 5):
+                pyxel.pset(*p(8, s), ACCENT)
         if e.rafaga:
-            pyxel.pset(*p(11, 0), SHOT)
+            pyxel.pset(*p(13, 0), SHOT)
 
     def _cazador(self, c):
         x, y = int(c.x), int(c.y)
-        pyxel.line(x - 8, y, x + 8, y, HUNTER)
-        pyxel.line(x - 8, y, x - 3, y - 4, HUNTER)
-        pyxel.line(x + 8, y, x + 3, y - 4, HUNTER)
-        pyxel.line(x - 3, y - 4, x + 3, y - 4, HUNTER)
-        pyxel.line(x - 5, y + 1, x + 5, y + 1, HUNTER2)
-        if (pyxel.frame_count // 6) % 2:
-            pyxel.pset(x, y - 5, WHITE)
+        fc = pyxel.frame_count
+        pyxel.elli(x - 11, y - 3, 23, 8, HUNTER0)            # el plato, con contorno
+        pyxel.elli(x - 10, y - 2, 21, 6, HUNTER)
+        pyxel.line(x - 8, y - 1, x + 6, y - 1, HUNTER2)       # luz arriba
+        pyxel.line(x - 8, y + 2, x + 8, y + 2, HUNTER0)       # sombra abajo
+        pyxel.elli(x - 5, y - 7, 11, 7, GLASS)                # la cúpula
+        pyxel.elli(x - 4, y - 6, 6, 3, GLASS2)
+        for i in range(4):                                    # las luces que giran
+            lx = x - 7 + ((i * 5 + fc // 4) % 15)
+            pyxel.pset(lx, y + 1, WHITE if i % 2 else GOLD)
 
     def _icono(self, x, y, tipo):
         """el dibujito de cada poder, de 7x7 alrededor de (x, y)."""
         if tipo == TRIPLE:
             for d in (-2, 0, 2):
-                pyxel.line(x + d, y + 2, x + d * 2, y - 2, NEON)
+                pyxel.line(x + d, y + 3, x + d * 2, y - 3, ACCENT)
         elif tipo == ESCUDO:
             pyxel.circb(x, y, 3, SHIELDC)
             pyxel.pset(x - 1, y - 1, WHITE)
         elif tipo == RAFAGA:
-            pyxel.rect(x - 2, y - 3, 1, 6, SHOT)
-            pyxel.rect(x + 1, y - 3, 1, 6, SHOT)
+            pyxel.rect(x - 2, y - 3, 1, 7, SHOT)
+            pyxel.rect(x + 1, y - 3, 1, 7, SHOT)
         else:
             pyxel.circb(x, y, 3, GOLD)
             for a in range(4):
@@ -1045,12 +1380,20 @@ class World:
 
     def _power(self, p):
         x, y, tipo, ttl = int(p[0]), int(p[1]), p[2], p[3]
-        if ttl < 90 and (pyxel.frame_count // 4) % 2:
+        fc = pyxel.frame_count
+        if ttl < 90 and (fc // 4) % 2:
             return
-        col = (NEON, SHIELDC, SHOT, GOLD)[tipo]
-        r = 6 + (pyxel.frame_count // 6) % 2
-        pyxel.circ(x, y, r - 1, SHADOW)
+        col = (ACCENT, SHIELDC, SHOT, GOLD)[tipo]
+        r = POWER_R
+        pyxel.circ(x, y, r, SHADOW)
         pyxel.circb(x, y, r, col)
+        pyxel.circb(x, y, r - 1, PANEL2)
+        pyxel.pset(x - r + 2, y - r + 3, WHITE)
+        a = fc * 0.08
+        for i in range(3):                                # el anillo que gira
+            aa = a + i * math.tau / 3
+            pyxel.pset(int(x + math.cos(aa) * (r + 2)),
+                       int(y + math.sin(aa) * (r + 2)), WHITE)
         self._icono(x, y, tipo)
 
     def _dibujar_cartel(self):
@@ -1058,90 +1401,105 @@ class World:
         if not c:
             return
         tit, sub, f, col, f0 = c
-        dx = max(0, (f - (f0 - 10)) * 18)
+        dx = max(0, (f - (f0 - 10)) * 22)
         if f < 20 and (f // 3) % 2:
             return
-        y = FIELD_TOP + 58
-        fx.flash(SHADOW, 0.7, 0, y - 5, W, 31 if sub else 21)
-        pyxel.rect(0, y - 5, W, 1, col)
-        pyxel.rect(0, y + (25 if sub else 15), W, 1, col)
-        cbig(W / 2 + dx, y, tit, col, BG)
+        k = 3
+        while k > 1 and big_width(tit, k) > W - 10:
+            k -= 1
+        y = 168                        # bajo la cuenta 3-2-1 del Cabinet
+        alto = 6 * k + (18 if sub else 8)
+        fx.flash(SHADOW, 0.7, 0, y - 7, W, alto + 4)
+        pyxel.rect(0, y - 8, W, 1, col)
+        pyxel.rect(0, y + alto - 3, W, 1, col)
+        big_ctext(W / 2 + dx + 2, y + 2, tit, BG, scale=k)
+        big_ctext(W / 2 + dx, y, tit, col, scale=k)
         if sub:
-            ctext(W / 2 + dx, y + 16, sub, TXT)
+            ks = 2 if big_width(sub, 2) <= W - 10 else 1
+            big_ctext(W / 2 + dx, y + 6 * k + 4, sub, TXT, scale=ks,
+                      shadow=SHADOW)
 
     def _hud(self):
         e = self.e
         fc = pyxel.frame_count
-        pyxel.rect(0, 0, W, HUD, PANEL)
+        # fila 1: puntaje, oleada y reloj, en grande
         sc = "%d" % e.score
-        big(3, 3, sc, GOLD if e.tormenta() else ACCENT, SHADOW)
-        x = 3 + big_w(sc) + 5
+        big_text(5, 5, sc, GOLD if e.tormenta() else ACCENT, scale=2,
+                 shadow=SHADOW)
+        x = 5 + big_width(sc, 2) + 4
         m = e.mult() * (2 if e.tormenta() else 1)
         if m > 1:                                   # el combo, con su mecha
             s = "x%d" % m
             col = PINK if (fc // 6) % 2 else GOLD
-            big(x, 3, s, col, SHADOW)
+            pyxel.rect(x - 1, 3, big_width(s, 2) + 2, 13, SHADOW)
+            big_text(x, 5, s, col, scale=2)
             if e.combo_t:
-                fx.bar(x, 15, big_w(s), 1, e.combo_t / e.mecha(), PINK, GRID)
-        # la oleada
-        text(86, 3, "OLEADA", TXT)
-        big(112, 3, "%d" % e.oleada, TXT, SHADOW)
+                fx.bar(x - 1, 17, big_width(s, 2) + 2, 2, e.combo_t / e.mecha(),
+                       PINK, GRID)
+        ox = 134
+        text(ox - 26, 8, "OLEADA", DIM)
+        big_text(ox, 5, "%d" % e.oleada, TXT, scale=2, shadow=SHADOW)
         if e.respiro and (fc // 6) % 2:
-            text(86, 10, "LIMPIA", GOLD)
+            text(ox + 14, 8, "LIMPIA", GOLD)
         elif e.oleada_t < 5 * 60 and not e.respiro:
-            text(86, 10, "OTRA!", WARN if (fc // 8) % 2 else TXT)
-        # las vidas, como navecitas
+            text(ox + 14, 8, "OTRA!", WARN if (fc // 8) % 2 else TXT)
+        s = e.time // 60
+        urge = s <= 10
+        col = WARN if urge and fc % 30 < 15 else TXT
+        r = "%d" % s
+        big_text(W - big_width(r, 2) - 5, 5, r, col, scale=2, shadow=SHADOW)
+        # fila 2: vidas, poderes y auto-fuego
         jit = ((fc % 4) - 1.5) if self.hud_golpe else 0
         for i in range(VIDAS):
-            col = SHIP1 if i < e.lives else GRID
+            col, luz = (SHIP2, SHIP3) if i < e.lives else (GRID, GRID)
             if i == e.lives and self.hud_golpe and (fc // 3) % 2:
-                col = WARN
-            bx = int(134 + i * 10 + jit)
-            pyxel.tri(bx + 3, 4, bx, 12, bx + 6, 12, col)
-            pyxel.pset(bx + 3, 9, BG if i < e.lives else GRID)
-        # los poderes activos, con su barrita
-        px = 166
+                col = luz = WARN
+            bx = int(6 + i * 12 + jit)
+            pyxel.tri(bx + 4, 18, bx, 26, bx + 8, 26, SHIP0)
+            pyxel.tri(bx + 4, 19, bx + 1, 25, bx + 7, 25, col)
+            pyxel.line(bx + 4, 19, bx + 1, 25, luz)
+            pyxel.pset(bx + 4, 23, GLASS if i < e.lives else GRID)
+        px = 50
         for tipo, t, t0 in ((ESCUDO, e.escudo, 0), (TRIPLE, e.triple, TRIPLE_TTL),
                             (RAFAGA, e.rafaga, RAFAGA_TTL)):
             if not t:
                 continue
             if t0 and t < 60 and (fc // 4) % 2:
-                px += 10
+                px += 14
                 continue
-            self._icono(px + 3, 7, tipo)
+            self._icono(px + 4, 22, tipo)
             if t0:
-                fx.bar(px, 12, 7, 2, t / t0, (NEON, SHIELDC, SHOT)[tipo], GRID)
-            px += 10
-        # el auto-fuego: prendido se ve, apagado queda tenue
-        ax = 202
+                fx.bar(px, 27, 9, 1, t / t0, (ACCENT, SHIELDC, SHOT)[tipo], GRID)
+            px += 14
+        ax = W - 30
         if self.auto:
             on = not self.auto_fx or (fc // 4) % 2
-            pyxel.rect(ax, 4, 19, 9, ACCENT if on else SHIP2)
-            text(ax + 2, 6, "AUTO", BG)
+            pyxel.rect(ax, 19, 25, 8, ACCENT if on else SHIP3)
+            text(ax + 5, 20, "AUTO", BG)
         else:
-            pyxel.rectb(ax, 4, 19, 9, GRID)
-            text(ax + 2, 6, "AUTO", DIM)
-        # el reloj, al doble, y la barra a todo lo ancho
-        s = e.time // 60
-        urge = s <= 10
-        col = WARN if urge and fc % 30 < 15 else TXT
-        r = "%d" % s
-        big(W - big_w(r) - 3, 3, r, col, SHADOW)
+            pyxel.rectb(ax, 19, 25, 8, GRID)
+            text(ax + 5, 20, "AUTO", DIM)
+        # el reloj también como barra, a todo lo ancho bajo el panel
         pyxel.rect(0, HUD - 2, W, 2, SHADOW)
         pyxel.rect(0, HUD - 2, int(W * e.time / TIME), 2,
                    WARN if e.tormenta() else ACCENT)
+        pyxel.rect(int(W * TORMENTA / TIME), HUD - 3, 1, 3, WARN)
 
 
 class Game:
     def __init__(self):
+        touch = web.is_touch()
         Cabinet(
             game_id="asteroides", title="ASTEROIDES",
             subtitle="90 segundos de deriva",
-            howto=["izq/der giran · arriba empuja · abajo frena",
-                   "espacio dispara (mantén) · c auto-fuego",
-                   "limpia cada oleada · ojo con minas y cometas",
+            howto=(["las flechas giran · empuje y freno",
+                    "auto-fuego prendido: dispara solo"]
+                   if touch else
+                   ["izq/der giran · arriba empuja · abajo frena",
+                    "espacio dispara (mantén) · c auto-fuego"]) +
+                  ["limpia cada oleada · ojo con minas y cometas",
                    "roturas seguidas hacen combo · caza la dorada"],
-            width=W, height=H, palette=PAL, scale=3, scoring=True,
+            width=W, height=H, palette=PAL, scale=2, scoring=True,
             ui=UIColors(bg=BG, text=TXT, dim=DIM, accent=ACCENT,
                         warn=WARN, shadow=SHADOW, panel=GRID),
             make_world=lambda: World(),

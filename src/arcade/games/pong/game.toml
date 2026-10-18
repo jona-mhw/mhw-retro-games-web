@@ -1,17 +1,20 @@
 # manifiesto del juego. el id es el nombre de la carpeta (games/pong).
+# la cancha va parada: en el celular vertical llena la pantalla.
 [game]
 title    = "Pong"
 author   = "Jona"
 year     = 2026
-width    = 220
-height   = 170
+width    = 240
+height   = 360
 blurb    = "90 segundos contra la máquina: pégale con efecto, carga el smash y derriba cada muro"
 controls = "mouse o flechas mueven · espacio o clic: smash · esc salir"
 
 # controles táctiles (celular): los dibuja index.html bajo la pantalla.
 # pad: "4" cruceta, "lr" izq/der, "ud" arriba/abajo, "drag" trackpad, "none" sin pad.
 # buttons: [nombre, tecla]; la tecla es la del teclado que el botón aprieta.
+# tú juegas abajo: el trackpad mueve la paleta de lado a lado sin que el dedo
+# tape la cancha (arrastrar sobre la cancha también sirve).
 [game.touch]
-pad     = "drag"                # trackpad: el dedo no tapa la cancha
+pad     = "drag"
 buttons = [["SMASH", "space"]]
-hint    = "arrastra en el panel · SMASH al pegar"
+hint    = "arrastra a los lados · SMASH justo al pegar"

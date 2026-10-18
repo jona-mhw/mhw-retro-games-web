@@ -11,7 +11,8 @@ from games.asteroides.game import (CAZADOR_VALE, CHICA, COMBO_CADA, COMBO_MAX,
                                    COMBO_TTL, COMETA_AVISO, COMETA_VALE,
                                    Cazador, Cometa, DISPARO_GAP, DORADA_TTL,
                                    DORADA_VALE, ESCUDO, Espacio, FIELD_TOP,
-                                   GRANDE, H, LIMPIA_VALE, MEDIANA, MINA_ONDA,
+                                   GRANDE, H, LIMPIA_VALE, MAXV, MEDIANA,
+                                   MINA_ONDA,
                                    MINA_VALE, Mina, NOVA, OLEADA_GAP, RAFAGA,
                                    RAFAGA_GAP, RESPIRO, Roca, TIME, TORMENTA,
                                    TRIPLE, VALE, VIDAS, W, dist2, envolver)
@@ -89,7 +90,7 @@ def test_la_velocidad_tiene_tope():
     e.a = 0.0
     for _ in range(400):
         e.step(0, True, False)
-    chk(math.hypot(e.vx, e.vy) <= 3.3, "la nave no acelera para siempre "
+    chk(math.hypot(e.vx, e.vy) <= MAXV + 0.05, "la nave no acelera para siempre "
         "(%.2f)" % math.hypot(e.vx, e.vy))
 
 
@@ -478,8 +479,20 @@ def test_el_campo_nunca_queda_vacio():
     chk(e.rocas, "siempre entra piedra nueva: el campo no se vacía")
 
 
+def test_la_pantalla_va_parada():
+    """en el celular vertical llena la pantalla: ancho de 216 a 256 px y alto
+    entre 1,45 y 1,6 veces el ancho (y el game.toml dice lo mismo)."""
+    import os
+    import tomllib
+    chk(216 <= W <= 256 and 1.45 <= H / W <= 1.6, "%dx%d va parada" % (W, H))
+    with open(os.path.join(os.path.dirname(__file__), "game.toml"), "rb") as f:
+        g = tomllib.load(f)["game"]
+    chk((g["width"], g["height"]) == (W, H), "y el game.toml lo sabe (%sx%s)"
+        % (g["width"], g["height"]))
+
+
 if __name__ == "__main__":
-    for fn in (test_el_campo_da_la_vuelta, test_la_distancia_cuenta_la_vuelta,
+    for fn in (test_la_pantalla_va_parada, test_el_campo_da_la_vuelta, test_la_distancia_cuenta_la_vuelta,
                test_la_nave_empuja_hacia_donde_mira,
                test_la_inercia_no_se_frena_sola_rapido, test_los_frenos,
                test_la_velocidad_tiene_tope, test_la_grande_se_parte_en_dos,
