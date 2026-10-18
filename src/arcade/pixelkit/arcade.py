@@ -97,6 +97,7 @@ class Cabinet:
         self.make_world = make_world
         self.scale = scale
         self.scoring = scoring
+        self._shade = None        # tabla color -> su sombra, para el velo
 
     # --- ciclo -----------------------------------------------------------
     def run(self):
@@ -415,10 +416,20 @@ class Cabinet:
 
     # --- cuenta regresiva y pausa ------------------------------------------
     def _veil(self):
-        """oscurece el juego a medias (un tramado) para que lo de encima se lea."""
-        pyxel.dither(0.55)
-        pyxel.rect(0, 0, self.w, self.h, self.ui.shadow)
-        pyxel.dither(1.0)
+        """oscurece el juego para que lo de encima se lea. de verdad: cada
+        color del framebuffer pasa a su gemelo en sombra (el más parecido de
+        la paleta a ese color apagado). si eso no se puede, un tramado."""
+        try:
+            if self._shade is None:
+                self._shade = _shade_map(self.palette)
+            mv = memoryview(pyxel.screen.data_ptr()).cast("B")
+            mv[:] = bytes(mv).translate(self._shade)
+        except Exception:
+            self._shade = False
+        if self._shade is False:
+            pyxel.dither(0.55)
+            pyxel.rect(0, 0, self.w, self.h, self.ui.shadow)
+            pyxel.dither(1.0)
 
     def _draw_count(self):
         u = self.ui
@@ -449,6 +460,19 @@ class Cabinet:
         _big_text(cx, by + 16, "PAUSA", u.accent, 2, u.shadow)
         ctext(cx, by + 32, _t("OK o toca para seguir", "enter para seguir"), u.text)
         ctext(cx, by + 43, _t("volver: sale al título", "esc: sale al título"), u.dim)
+
+
+def _shade_map(palette, k=0.38):
+    """tabla de 256 bytes: cada índice -> el color de la paleta más parecido a
+    ese mismo color apagado (k de brillo, con un dejo azul de noche). sirve
+    para bytes.translate sobre la pantalla."""
+    rgb = [((c >> 16) & 255, (c >> 8) & 255, c & 255) for c in palette]
+    out = bytearray(range(256))
+    for i, (r, g, b) in enumerate(rgb[:256]):
+        tr, tg, tb = r * k, g * k, b * k + 6
+        out[i] = min(range(len(rgb)), key=lambda j: (rgb[j][0] - tr) ** 2 * 3
+                     + (rgb[j][1] - tg) ** 2 * 4 + (rgb[j][2] - tb) ** 2 * 2)
+    return bytes(out)
 
 
 # fuente 2x hecha a mano para las 3 iniciales grandes ------------------------
