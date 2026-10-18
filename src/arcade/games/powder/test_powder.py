@@ -5,13 +5,13 @@
 import random
 import time
 
-from games.powder.game import (CATS, CELL_H, CELL_W, CHB, CW, ESCENAS, KIND,
+from games.powder.game import (CATS, CELL_H, CELL_W, CHB, CSS, CW, ESCENAS, H, KIND,
                     NB8, NCHUNK, SH, TAB_H, TAB_W, TOOLS, W, App, Sim, cell_box,
                     tool_at, K_ACID, K_BHOLE, K_CLONE, K_EMBER, K_EMPTY, K_FIRE,
                     K_FWORK, K_GAS, K_ICE, K_LAVA, K_LEAF, K_MCOOL, K_METAL,
                     K_OIL, K_PLANT, K_PLASMA, K_POWDER, K_ROCKET, K_SAND,
-                    K_SEED, K_SNOW, K_SPARK, K_STEAM, K_STONE, K_TRUNK,
-                    K_VIRUS, K_WALL, K_WATER, K_WOOD)
+                    K_SEED, K_SNOW, K_SPARK, K_STONE, K_TRUNK,
+                    K_VIRUS, K_WALL, K_WATER)
 
 FALLAS = []
 
@@ -81,7 +81,7 @@ def estanque(alto=45):
 def test_chunks():
     s = Sim()
     puestos = 0
-    for cx in (40, 100, 160, 220, 280):
+    for cx in (20, 64, 96, 128, 190):      # tres caen justo en una frontera
         for y in range(2, 30):
             for x in range(cx - 3, cx + 4):
                 s.put(y * W + x, K_SAND)
@@ -207,13 +207,13 @@ def test_el_agua_no_queda_amontonada():
     """
     s = Sim()
     _piso(s)
-    rellena(s, 60, 260, SH - 14, SH - 1, K_WATER)        # el charco
-    s._blob(160, SH - 22, 13, K_WATER, force=True)       # el montículo encima
+    rellena(s, 12, 212, SH - 14, SH - 1, K_WATER)        # el charco
+    s._blob(112, SH - 22, 13, K_WATER, force=True)       # el montículo encima
     s.active[:] = b"\x01" * NCHUNK
-    alto0 = SH - 1 - min(y for y in range(SH) for x in range(60, 261)
+    alto0 = SH - 1 - min(y for y in range(SH) for x in range(12, 213)
                          if KIND[s.g[y * W + x]] == K_WATER)
     correr(s, 500)
-    topes = [t for t in (_tope(s, x) for x in range(62, 259)) if t is not None]
+    topes = [t for t in (_tope(s, x) for x in range(14, 211)) if t is not None]
     topes.sort()
     mediana = topes[len(topes) // 2]
     pico = topes[0]                                      # la columna más alta
@@ -237,7 +237,7 @@ def test_el_agua_quieta_deja_dormir_los_chunks():
     s = Sim()
     _piso(s)
     for y in range(SH - 60, SH - 1):
-        for x in range(40, 280):
+        for x in range(16, 208):
             s.put(y * W + x, K_WATER)
             s.wake(x, y)
     correr(s, 1200)
@@ -253,7 +253,7 @@ def test_el_agua_asentada_se_despierta():
     s = Sim()
     _piso(s)
     for y in range(SH - 40, SH - 1):
-        for x in range(60, 260):
+        for x in range(12, 212):
             s.put(y * W + x, K_WATER)
             s.wake(x, y)
     correr(s, 900)
@@ -359,7 +359,7 @@ def test_circuito():
     for x in range(20, 206):
         s.put(60 * W + x, K_METAL)
         s.wake(x, 60)
-    for x in range(200, 240):
+    for x in range(200, 224):
         s.put(64 * W + x, K_WALL)
         s.wake(x, 64)
     rellena(s, 204, 222, 61, 64, K_POWDER)
@@ -466,8 +466,8 @@ def test_rendimiento():
     s = Sim()
     _piso(s)
     random.seed(3)
-    for y in range(10, 120):
-        for x in range(20, 300, 3):
+    for y in range(10, 172):                  # la mesa es más angosta y más alta
+        for x in range(20, 210, 3):
             s.put(y * W + x, (K_SAND, K_WATER, K_SAND, K_OIL)[(x // 3 + y) % 4])
     s.active[:] = b"\x01" * NCHUNK
     n = W * SH - s.g.count(0)
@@ -494,7 +494,16 @@ def test_barra_por_categorias():
     vistos = [k for _, ks in CATS for k in ks]
     chk(len(vistos) == len(set(vistos)) == len(TOOLS), "cada material está en una sola pestaña")
     chk(all(len(ks) * CELL_W <= W for _, ks in CATS), "y los de cada pestaña caben en una fila")
-    chk(CELL_W >= 50 and CELL_H >= 30, "las casillas son grandes (%dx%d)" % (CELL_W, CELL_H))
+    # en un celular de 390 px de ancho, medidas en px de pantalla: un dedo
+    # acierta sin pensar a partir de ~44
+    chk(CELL_W * CSS >= 60 and CELL_H * CSS >= 60, "las casillas son grandes "
+        "(%dx%d px de pantalla)" % (CELL_W * CSS, CELL_H * CSS))
+    chk(TAB_W * CSS >= 60 and TAB_H * CSS >= 36, "y las pestañas también (%dx%d)"
+        % (TAB_W * CSS, TAB_H * CSS))
+    chk(SH + TAB_H + CELL_H <= H, "la barra entra en la pantalla")
+    chk(W * SH <= 320 * 194 * 1.01, "la mesa no simula más celdas que la apaisada "
+        "(%d)" % (W * SH))
+    chk(1.45 <= H / W <= 1.6 and 216 <= W <= 256, "pantalla vertical (%dx%d)" % (W, H))
     chk(len(TOOLS) - 1 == 22, "22 materiales + borrar (hay %d)" % (len(TOOLS) - 1))
     chk(tool_at(5, SH - 1, 0) is None, "tocar arriba de la barra no elige nada")
     chk(tool_at(TAB_W * 2 + 3, SH + 2, 0) == ("tab", 2), "tocar una pestaña la abre")
@@ -566,20 +575,26 @@ def test_el_fuego_quema_el_virus():
 
 
 def test_agujero_negro_traga():
-    s = Sim()
-    s._blob(160, 100, 4, K_BHOLE, force=True)
-    b0 = cuenta(s, K_BHOLE)
-    for x in range(140, 158):                # una repisa al lado del agujero
-        s.put(113 * W + x, K_WALL)
-    rellena(s, 144, 154, 104, 113, K_SAND)
-    rellena(s, 120, 126, 60, 140, K_WALL)
-    m0 = cuenta(s, K_WALL)
-    a0 = cuenta(s, K_SAND)
-    correr(s, 300)
-    print(f"agujero negro: arena {a0} -> {cuenta(s, K_SAND)}")
-    chk(cuenta(s, K_SAND) < a0 // 2, "el agujero negro se traga la arena de al lado")
-    chk(cuenta(s, K_BHOLE) == b0, "y no crece ni se achica")
-    chk(cuenta(s, K_WALL) == m0, "el muro resiste")
+    """en promedio de tres corridas: con 90 granos el resultado de una sola
+    baila ±4 y caía justo en el borde según la semilla."""
+    quedan = []
+    for semilla in (1, 2, 3):
+        random.seed(semilla)
+        s = Sim()
+        s._blob(160, 100, 4, K_BHOLE, force=True)
+        b0 = cuenta(s, K_BHOLE)
+        for x in range(140, 158):                # una repisa al lado del agujero
+            s.put(113 * W + x, K_WALL)
+        rellena(s, 144, 154, 104, 113, K_SAND)
+        rellena(s, 120, 126, 60, 140, K_WALL)
+        m0 = cuenta(s, K_WALL)
+        a0 = cuenta(s, K_SAND)
+        correr(s, 300)
+        quedan.append(cuenta(s, K_SAND))
+        chk(cuenta(s, K_BHOLE) == b0, "y no crece ni se achica")
+        chk(cuenta(s, K_WALL) == m0, "el muro resiste")
+    print(f"agujero negro: arena {a0} -> {quedan}")
+    chk(sum(quedan) / 3 < a0 / 2, "el agujero negro se traga la arena de al lado")
 
 
 def test_clonador():
@@ -703,6 +718,34 @@ def test_escenas():
         chk(not fl, f"la escena {nombre} deja granos flotando: {fl[:3]}")
         chk(parts > 500, f"la escena {nombre} tiene qué mirar ({parts})")
 
+def test_la_piel():
+    """el compositor: borde de luz arriba, cielo en lo vacío, resplandor junto
+    al fuego, y la grilla de la simulación intacta."""
+    from games.powder.game import (GLOW1, Piel, SKY_BASE, SKY, STAR1,
+                                   STAR2, T_LIGHT)
+    s = Sim()
+    rellena(s, 50, 70, SH - 10, SH, K_SAND)
+    rellena(s, 150, 153, SH - 10, SH - 7, K_FIRE, life=40)
+    antes = bytes(s.g)
+    p = Piel()
+    out = p.componer(s.g, 1, 0)
+    chk(len(out) == W * SH and bytes(s.g) == antes, "dibuja sin tocar la grilla")
+    arriba = out[(SH - 10) * W + 60]
+    chk(arriba == T_LIGHT[s.g[(SH - 10) * W + 60]] and arriba != s.g[(SH - 10) * W + 60],
+        "la cara de arriba de la arena va con su tono de luz")
+    chk(out[(SH - 5) * W + 60] == s.g[(SH - 5) * W + 60], "el interior, con su tono")
+    cielo = set(range(SKY_BASE, SKY_BASE + len(SKY))) | {STAR1, STAR2}
+    chk(out[20 * W + 100] in cielo, "lo vacío es cielo")
+    chk(out[(SH - 9) * W + 153] == GLOW1, "al lado del fuego, resplandor")
+    chk(out[(SH - 9) * W + 180] in cielo, "y lejos, no")
+    t0 = time.perf_counter()
+    for f in range(40):
+        p.componer(s.g, f, 0)
+    ms = (time.perf_counter() - t0) / 40 * 1000
+    print(f"piel: {ms:.2f} ms por cuadro")
+    chk(ms < 2.5, "la piel es barata (%.2f ms)" % ms)
+
+
 if __name__ == "__main__":
     for fn in (test_chunks, test_chunk_vecino, test_agua_apaga, test_lava_agua,
                test_hielo_congela, test_hielo_calor, test_arbol, test_gas,
@@ -718,7 +761,7 @@ if __name__ == "__main__":
                test_virus_contagia_y_se_apaga, test_el_fuego_quema_el_virus,
                test_agujero_negro_traga, test_clonador, test_cohetes,
                test_la_explosion_lanza_cohetes, test_nieve, test_rayo,
-               test_la_lava_quieta_se_enfria, test_escenas):
+               test_la_lava_quieta_se_enfria, test_escenas, test_la_piel):
         random.seed(1234)  # misma escena en cada corrida
         fn()
     print("\n=== TODO OK ===" if not FALLAS

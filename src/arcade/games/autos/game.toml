@@ -3,8 +3,8 @@
 title    = "Autos"
 author   = "Jona"
 year     = 2026
-width    = 384
-height   = 288
+width    = 256
+height   = 384
 blurb    = "gta 2 en 90 segundos: levanta fajos, cumple misiones, derrapa, salta rampas y escapa de 5 estrellas"
 controls = "flechas o wasd manejan · freno + doblar = derrape · esc salir"
 

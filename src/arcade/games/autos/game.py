@@ -14,8 +14,9 @@ propina y queda a salvo — y el banco se muda lejos.
 lo que suma emoción a la vuelta del banco:
 
 - **misiones cortas** que aparecen solas: llevar un paquete a un punto, pasar
-  por tres metas contra reloj, o salir de un cerco policial. una flecha en el
-  borde de la pantalla te lleva.
+  por tres metas contra reloj, o salir de un cerco policial. un chevrón que
+  gira alrededor del auto apunta al objetivo, y un ícono en el borde de la
+  pantalla dice a cuántos metros está.
 - **búsqueda de 5 estrellas**: con 3 aparecen bloqueos en la calle, con 4 un
   helicóptero con foco. si te alejas de todos un rato, pierdes una estrella
   (las estrellas titilan mientras te pierden la pista).
@@ -25,6 +26,11 @@ lo que suma emoción a la vuelta del banco:
 
 la partida dura 90 segundos y ni el reloj ni los poderes pueden estirarla más
 (el reloj suma con tope), así que se juega entera en menos de dos minutos.
+
+la pantalla es vertical (256x384) y la ciudad también (544x704): la cámara
+se adelanta hacia donde vas, así yendo para arriba o para abajo se ve mucho
+camino. el arte (paleta, ciudad horneada con sombras, autos pre-rotados) vive
+en art.py.
 
 la lógica vive en clases sin pyxel — City, Car, Ped, Cop, Heli y **Partida**,
 que es el juego entero: recibe el input ya leído y devuelve una lista de
@@ -37,15 +43,23 @@ from collections import deque
 
 import pyxel
 
+from games.autos import art
+from games.autos.art import (ACCENT, ASPHALT, BG, BILL, BILL0, BILL2, CAR0,
+                             CARBODY, COP2, DIM, GOLD, GRASS1, GRASS2, HAIR,
+                             LIGHTB, LIGHTR, MAGENTA, MET2, NITRO1,
+                             NITRO2, ORANGE, OUTLINE, PAL, PANEL, PANEL2,
+                             PANEL3, PED1, PED2, PED3, PED4, SHADOW, SIDE,
+                             SKID, SKIN, SMOKE1, SMOKE2, SPARK1, SPARK2,
+                             SPARK3, TRUNK, TXT, WATER, WHITE, WINLIT)
 from pixelkit import fx, web
 from pixelkit.arcade import Cabinet, UIColors
-from pixelkit.pxtext import _ACUTE, _TILDE, ctext, text
+from pixelkit.pxtext import big_ctext, big_text, big_width, ctext, text
 
-W, H = 384, 288
-HUD = 26                         # la barra de arriba: números al doble de tamaño
+W, H = 256, 384                  # vertical: llena el celular parado
+HUD = 30                         # la barra de arriba: números al doble de tamaño
 VIEW_H = H - HUD
 TILE = 16
-MW, MH = 44, 34                  # ciudad en tiles → 704 x 544
+MW, MH = 34, 44                  # ciudad en tiles → 544 x 704: parada, como la pantalla
 MAP_PX, MAP_PY = MW * TILE, MH * TILE
 B = 8                            # calle cada 8 tiles, de 2 de ancho
 TIME = 90 * 60                   # 90 segundos, y el reloj no puede pasarse
@@ -126,24 +140,7 @@ EXTRA_MAX = 20 * 60              # ...y el total que pueden sumar TODOS juntos
 # hasta TIME, agarrar uno atrás de otro la deja clavada en 90 s para siempre.
 # el presupuesto sí: la corrida más larga posible es TIME + EXTRA_MAX = 110 s.
 
-# paleta
-(BG, ASPHALT, LINE, SIDE, SIDE2, GRASS1, GRASS2, TREETOP, TREEDK, TRUNK,
- WATER, BLD1, BLD2, BLD3, ROOF, GLASS, CARBODY, CARROOF, HEAD, BILL, BILL2,
- TXT, DIM, ACCENT, SHADOW, WHITE,
- COP1, COP2, LIGHTR, LIGHTB, SKIN, PED1, PED2, PED3,
- SMOKE1, SMOKE2, SPARK1, SPARK2, SPARK3, NITRO1, NITRO2,
- GOLD, MAGENTA, MAPBG, MAPRD, MAPME, SKID, ORANGE, HELI1, PANEL) = range(50)
-PAL = [
-    0x0C0E14, 0x33383F, 0xC9A227, 0x6B7280, 0x828A9C, 0x3E7A32, 0x4E9440,
-    0x57A544, 0x2E5E28, 0x6B4A2A, 0x3E86C4, 0x8A5A44, 0x6E6A82, 0xB0865A,
-    0x242834, 0x7ADCFF, 0xE0402A, 0x9C2A1E, 0xFFF0A0, 0x3FA65C, 0x9BE88A,
-    0xE8ECF5, 0x5A6480, 0x8AC52F, 0x070810, 0xF2F5FB,
-    0x1E3A8A, 0xDCE3F0, 0xFF3B30, 0x4DA6FF, 0xE8B48A, 0xD8483A, 0x4A78D8,
-    0xE7C13B, 0x6E7684, 0x39404E, 0xFFF3B0, 0xFFA23A, 0xE0402A, 0x7ADCFF,
-    0x2E7FBF, 0xFFD24A, 0xD84AB8, 0x11131C, 0x3A4152, 0x8AC52F,
-    0x22262C, 0xFF8C1A, 0x2A3550, 0x161A26,
-] + [0] * (256 - 50)
-
+# paleta y arte: viven en art.py (rampas de tonos, sombras, autos rotados)
 SMOKE = (SMOKE1, SMOKE2, ASPHALT)
 TIRE = (WHITE, SMOKE1, SMOKE2)
 SPARKS = (WHITE, SPARK1, SPARK2, SPARK3)
@@ -480,8 +477,10 @@ class Partida:
         self.rng = random.Random(seed)
         self.roads = self.city.road_tiles()
         self.walks = self.city.walk_tiles()
-        tx, ty = min(self.roads,
-                     key=lambda p: abs(p[0] - MW // 2) + abs(p[1] - MH // 2))
+        # arranca en una calle horizontal (mirando a la derecha, a = 0), en el
+        # tramo más cercano al centro: así acelerar sin doblar no te estrella
+        tramo = [r for r in self.roads if r[1] % B < 2 and r[0] % B >= 2]
+        tx, ty = min(tramo, key=lambda p: abs(p[0] - MW // 2) + abs(p[1] - MH // 2))
         self.car = Car(tx * TILE + 8, ty * TILE + 8)
         self.money = 0
         self.racha = 0
@@ -998,69 +997,7 @@ class Partida:
         ev.append(("power", self.car.x, self.car.y, tipo))
 
 
-# --- letra grande ----------------------------------------------------------
-# la fuente de pyxel es de 4x6: a la escala del teléfono (~1x en este juego de
-# 384 px) se lee como hormigas. los números que importan (plata, reloj,
-# misión) van al doble: cada glifo se lee una vez de la fuente y se guarda como
-# tiras horizontales, que después se pintan con rect. son ~10 rects por letra.
-_GLY = {}
-
-
-def _glyph(ch):
-    g = _GLY.get(ch)
-    if g is not None:
-        return g
-    if ch == "$":
-        # el $ de la fuente, al doble, se lee como una f: va dibujado a mano
-        runs = [(1, -1, 1), (0, 0, 3), (0, 1, 1), (0, 2, 3), (2, 3, 1),
-                (0, 4, 3), (1, 5, 1)]
-        _GLY[ch] = runs
-        return runs
-    base = _ACUTE.get(ch) or _TILDE.get(ch) or ch
-    flip = base == "¡"
-    img = pyxel.Image(8, 8)
-    img.cls(0)
-    img.text(0, 0, "!" if flip else base, 1)
-    runs = []
-    for gy in range(6):
-        gx = 0
-        while gx < 4:
-            if img.pget(gx, gy):
-                s0 = gx
-                while gx < 4 and img.pget(gx, gy):
-                    gx += 1
-                runs.append((s0, (4 - gy) if flip else gy, gx - s0))
-            else:
-                gx += 1
-    if ch in _ACUTE:
-        runs += [(2, -2, 1), (1, -1, 1)]
-    elif ch in _TILDE:
-        runs += [(0, -1, 1), (1, -2, 1), (2, -1, 1)]
-    _GLY[ch] = runs
-    return runs
-
-
-def big(x, y, s, col, k=2, sh=SHADOW):
-    """texto a k veces, con sombra para leerse sobre la ciudad."""
-    x, y = int(x), int(y)
-    for i, ch in enumerate(s):
-        if ch == " ":
-            continue
-        ox = x + i * 4 * k
-        for gx, gy, w in _glyph(ch):
-            if sh is not None:
-                pyxel.rect(ox + gx * k + 1, y + gy * k + 1, w * k, k, sh)
-            pyxel.rect(ox + gx * k, y + gy * k, w * k, k, col)
-
-
-def big_w(s, k=2):
-    return len(s) * 4 * k
-
-
-def cbig(cx, y, s, col, k=2, sh=SHADOW):
-    big(cx - big_w(s, k) / 2, y, s, col, k, sh)
-
-
+# --- la piel ---------------------------------------------------------------
 def stext(x, y, s, col, sh=SHADOW):
     """texto chico con sombra: sobre el mapa, gris sobre gris no se lee."""
     text(int(x) + 1, int(y) + 1, s, sh)
@@ -1087,7 +1024,120 @@ def con_dedo():
 MISION_COL = {"entrega": ORANGE, "ruta": NITRO1, "escape": LIGHTR}
 MISION_TIT = {"entrega": "ENTREGA", "ruta": "CARRERA", "escape": "CERCO"}
 OBJ_COL = {"paquete": ORANGE, "destino": ORANGE, "meta": NITRO1, "banco": BILL2}
-RW, RH = 72, 52                  # el radar: una ventana del plano, a 2 px por tile
+RW, RH = 64, 64                  # el radar: una ventana del plano, a 2 px por tile
+KINDS = (ROAD, SIDEWALK, GRASS, TREE, FOUNT, BLD)
+ROPA = (PED1, PED2, PED3, PED4)
+
+# el $ de la fuente, agrandado, se lee como una f: va dibujado a mano, en
+# tiras (x, y, ancho) sobre la grilla de 4x6 de la letra
+_DOLLAR = ((1, -1, 1), (0, 0, 3), (0, 1, 1), (0, 2, 3), (2, 3, 1), (0, 4, 3), (1, 5, 1))
+
+
+def btext(x, y, s, col, k=2, shadow=None):
+    """big_text de pixelkit, pero con un $ que se lee."""
+    x, y = int(x), int(y)
+    if "$" not in s:
+        big_text(x, y, s, col, k, shadow)
+        return
+    big_text(x, y, s.replace("$", " "), col, k, shadow)
+    for i, ch in enumerate(s):
+        if ch != "$":
+            continue
+        ox = x + i * 4 * k
+        for gx, gy, w in _DOLLAR:
+            if shadow is not None:
+                pyxel.rect(ox + gx * k + 1, y + gy * k + 1, w * k, k, shadow)
+            pyxel.rect(ox + gx * k, y + gy * k, w * k, k, col)
+
+
+def bctext(cx, y, s, col, k=2, shadow=None):
+    btext(cx - big_width(s, k) / 2, y, s, col, k, shadow)
+
+
+# íconos chicos, horneados una vez: estrellas, billete, reloj, banco
+_ICONS = []
+
+
+def _star(img, x, y, col, borde):
+    """una estrella de 5 puntas de 11 px con contorno, en una imagen."""
+    pts = []
+    for i in range(10):
+        a = -math.pi / 2 + i * math.pi / 5
+        r = 5.6 if i % 2 == 0 else 2.4
+        pts.append((x + math.cos(a) * r, y + math.sin(a) * r))
+    for oxy in ((-1, 0), (1, 0), (0, -1), (0, 1)) if borde is not None else ():
+        for i in range(0, 10, 2):
+            a, b, c = pts[i], pts[(i + 1) % 10], pts[(i - 1) % 10]
+            img.tri(a[0] + oxy[0], a[1] + oxy[1], b[0] + oxy[0], b[1] + oxy[1],
+                    c[0] + oxy[0], c[1] + oxy[1], borde)
+        img.circ(x + oxy[0], y + oxy[1], 3, borde)
+    for i in range(0, 10, 2):
+        a, b, c = pts[i], pts[(i + 1) % 10], pts[(i - 1) % 10]
+        img.tri(a[0], a[1], b[0], b[1], c[0], c[1], col)
+    img.circ(x, y, 2, col)
+
+
+def icons():
+    """(imagen, {nombre: (u, v, w, h)})."""
+    if _ICONS:
+        return _ICONS[0]
+    img = pyxel.Image(128, 32)
+    img.cls(art.TRANSP)
+    box = {}
+    for i, (col, hi) in enumerate(((GOLD, WHITE), (LIGHTR, SPARK1), (PANEL3, None),
+                                   (DIM, None))):
+        x = 8 + i * 16
+        _star(img, x, 8, col, OUTLINE)
+        if hi is not None:
+            img.pset(x - 1, 5, hi)
+            img.pset(x - 2, 7, hi)
+        box[("star", i)] = (x - 7, 1, 15, 15)
+    # el billete
+    x, y = 70, 2
+    img.rect(x - 1, y - 1, 16, 11, OUTLINE)
+    img.rect(x, y, 14, 9, BILL)
+    img.rect(x, y, 14, 1, BILL2)
+    img.rect(x, y + 8, 14, 1, BILL0)
+    img.rect(x + 5, y + 2, 4, 5, BILL0)
+    img.rect(x + 6, y + 3, 2, 3, BILL2)
+    img.pset(x + 2, y + 4, BILL2)
+    img.pset(x + 11, y + 4, BILL2)
+    box["bill"] = (x - 1, y - 1, 16, 11)
+    # el reloj
+    x, y = 96, 8
+    img.circ(x, y, 6, OUTLINE)
+    img.circ(x, y, 5, TXT)
+    img.circ(x, y, 4, WHITE)
+    img.line(x, y, x, y - 3, OUTLINE)
+    img.line(x, y, x + 2, y, OUTLINE)
+    img.rect(x - 1, y - 8, 3, 2, OUTLINE)
+    box["clock"] = (x - 7, 0, 15, 15)
+    # el banco: un frontón con columnas
+    x, y = 110, 2
+    img.tri(x, y + 4, x + 6, y, x + 12, y + 4, OUTLINE)
+    img.tri(x + 2, y + 3, x + 6, y + 1, x + 10, y + 3, BILL2)
+    img.rect(x, y + 4, 13, 7, OUTLINE)
+    for c in range(3):
+        img.rect(x + 2 + c * 4, y + 5, 2, 4, BILL2)
+    img.rect(x + 1, y + 9, 11, 1, BILL)
+    box["bank"] = (x, y, 13, 12)
+    # el paquete
+    x, y = 2, 18
+    img.rect(x, y, 12, 10, OUTLINE)
+    img.rect(x + 1, y + 1, 10, 8, TRUNK)
+    img.rect(x + 1, y + 1, 10, 2, ORANGE)
+    img.rect(x + 5, y + 1, 2, 8, GOLD)
+    box["paquete"] = (x, y, 12, 10)
+    _ICONS.append((img, box))
+    return _ICONS[0]
+
+
+def icon(name, x, y, center=True):
+    img, box = icons()
+    u, v, w, h = box[name]
+    if center:
+        x, y = x - w // 2, y - h // 2
+    pyxel.blt(int(x), int(y), img, u, v, w, h, art.TRANSP)
 
 
 class World:
@@ -1105,8 +1155,9 @@ class World:
         self.radar = None
         self.exhaust = 0
         self.marcas = deque(maxlen=420)     # huellas de goma en el asfalto
-        self.banner = None                  # [texto, col, vida, sub]
+        self.banner = None                  # [texto, col, vida, sub, vida0]
         self.f = 0                          # reloj de animación propio
+        self.thr = 0
         cx, cy = self._cam_target()
         self.camx, self.camy = cx, cy
 
@@ -1135,6 +1186,7 @@ class World:
 
     def tick(self, thr, st):
         p = self.p
+        self.thr = thr
         antes = p.mult()
         for e in p.step(thr, st):
             self._efecto(e, antes)
@@ -1154,7 +1206,7 @@ class World:
         # humo del escape cuando aceleras fuerte, y llamarada con nitro
         if abs(car.spd) > 1.8 and self.exhaust % 3 == 0 and not car.air:
             back = car.a + math.pi
-            self.fx.burst(car.x + math.cos(back) * 10, car.y + math.sin(back) * 10,
+            self.fx.burst(car.x + math.cos(back) * 11, car.y + math.sin(back) * 11,
                           NITROFX if p.nitro else SMOKE,
                           n=3 if p.nitro else 2, speed=0.9, life=16,
                           spread=0.7, angle=back)
@@ -1163,30 +1215,32 @@ class World:
                             or (car.mano and car.spd > 1.2)
                             or (thr < 0 and car.spd > 1.8)):
             ca, sa = math.cos(car.a), math.sin(car.a)
-            for s in (-5, 5):
-                wx = car.x - 8 * ca - s * sa
-                wy = car.y - 8 * sa + s * ca
+            for s in (-4, 4):
+                wx = car.x - 7 * ca - s * sa
+                wy = car.y - 7 * sa + s * ca
                 self.marcas.append((int(wx), int(wy)))
                 if self.exhaust % 2 == 0:
                     self.fx.burst(wx, wy, TIRE, n=1, speed=0.5, life=24,
                                   spread=math.tau)
-        # la cámara mira hacia donde vas: más rápido, más adelante
+        # la cámara mira hacia donde vas: en vertical se ve mucho más camino
+        # adelante cuando vas para arriba o para abajo
         tx, ty = self._cam_target()
-        self.camx += (tx - self.camx) * 0.10
-        self.camy += (ty - self.camy) * 0.10
-        # pero el auto nunca se va al borde: con la cámara lenta y el nitro
-        # quedaba pegado a la orilla, sin ver lo que venía
-        self.camx = max(car.x - W + 90, min(car.x - 90, self.camx))
-        self.camy = max(car.y - VIEW_H + 70, min(car.y - 70, self.camy))
+        self.camx += (tx - self.camx) * 0.08
+        self.camy += (ty - self.camy) * 0.08
+        # pero el auto nunca se va al borde
+        self.camx = max(car.x - W + 64, min(car.x - 64, self.camx))
+        self.camy = max(car.y - VIEW_H + 78, min(car.y - 96, self.camy))
         self.camx = max(0, min(MAP_PX - W, self.camx))
         self.camy = max(0, min(MAP_PY - VIEW_H, self.camy))
         self.fx.update()
 
     def _cam_target(self):
         car = self.p.car
-        look = 30
-        tx = car.x + math.cos(car.va) * car.spd * look - W / 2
-        ty = car.y + math.sin(car.va) * car.spd * look * 0.8 - VIEW_H / 2
+        sp = max(0.0, car.spd)
+        lx = max(-58.0, min(58.0, math.cos(car.va) * sp * 17))
+        ly = max(-120.0, min(120.0, math.sin(car.va) * sp * 36))
+        tx = car.x + lx - W / 2
+        ty = car.y + ly - VIEW_H / 2 - 12
         return (max(0, min(MAP_PX - W, tx)), max(0, min(MAP_PY - VIEW_H, ty)))
 
     def _banner(self, s, col, sub="", life=60):
@@ -1200,7 +1254,7 @@ class World:
         if kind == "fajo":
             _, x, y, monto = e
             self.fx.burst(x, y, CASH, n=14, speed=1.9, life=26)
-            self.fx.popup(x, y - 8, "$%d" % monto, BILL2)
+            self.fx.popup(x, y - 10, "+$%d" % monto, BILL2)
         elif kind == "choque":
             _, x, y = e
             self.fx.burst(x, y, SPARKS, n=12, speed=2.1, life=18)
@@ -1208,7 +1262,7 @@ class World:
         elif kind in ("embiste", "marcado"):
             _, x, y, perdido = e
             self.fx.burst(x, y, SPARKS, n=26, speed=2.8, life=26)
-            self.fx.popup(car.x, car.y - 12, "-$%d" % perdido, LIGHTR)
+            self.fx.popup(car.x, car.y - 14, "-$%d" % perdido, LIGHTR)
             self.fx.shake(6)
             self.fx.destello(LIGHTR)
             if kind == "marcado":
@@ -1245,7 +1299,7 @@ class World:
             _, w, motivo = e
             self._banner("TE PERDIERON" if motivo == "perdidos" else "FUERA DEL CERCO",
                          ACCENT, "una estrella menos")
-            self.fx.burst(car.x, car.y, (WHITE, ACCENT, GRASS1), n=18, speed=2.2)
+            self.fx.burst(car.x, car.y, (WHITE, ACCENT, GRASS2), n=18, speed=2.2)
         elif kind == "enfriado":
             self._banner("TE SOLTARON", ACCENT, "sin estrellas")
             self.fx.destello(ACCENT)
@@ -1287,27 +1341,11 @@ class World:
             self._banner("SE ACABÓ EL TIEMPO", DIM, "misión perdida", life=60)
         elif kind == "bloqueo":
             self.fx.burst(e[1], e[2], (WHITE, LIGHTR, LIGHTB), n=12, speed=1.6)
-        elif kind == "heli":
-            pass
 
     # --- dibujo ----------------------------------------------------------
-    def _bake_city(self):
-        """la ciudad entera pintada UNA vez en una imagen de 704×544.
-
-        antes eran ~450 tiles con 4-6 rects cada uno, todos los frames: la mitad
-        del costo del juego. ahora es un solo blt de la ventana visible.
-        """
-        img = pyxel.Image(MAP_PX, MAP_PY)
-        for ty in range(MH):
-            for tx in range(MW):
-                self._tile(img, tx * TILE, ty * TILE, tx, ty)
-        for (tx, ty), eje in self.p.city.ramps.items():
-            self._rampa(img, tx * TILE, ty * TILE, eje, tx, ty)
-        self.city_img = img
-
     def draw(self):
         if self.city_img is None:
-            self._bake_city()
+            self.city_img = art.city_image(self.p.city, B, KINDS)
         p = self.p
         pyxel.cls(BG)
         sx, sy = self.fx.offset()
@@ -1317,6 +1355,7 @@ class World:
         pyxel.blt(0, HUD, self.city_img, camx, camy, W, VIEW_H)
         for x, y in self.marcas:
             pyxel.pset(x - camx, y + oy, SKID)
+        pyxel.clip(0, HUD, W, VIEW_H)
         for b in p.bloqueos:
             self._bloqueo(b, camx, oy)
         m = p.mision
@@ -1333,191 +1372,179 @@ class World:
         if p.heli is not None:
             self._foco(p.heli.x - camx, p.heli.y + oy)
         self.fx.draw(camx, -oy)
+        cop_spr = art.rotados("cop")
         for cop in p.cops:
-            self._car_sprite(cop.x - camx, cop.y + oy, cop.car.a, COP1, COP2, cop=True)
+            self._cop(cop_spr, cop.x - camx, cop.y + oy, cop.car.a)
         car = p.car
         if p.grace <= 0 or (self.f // 4) % 2:
-            alto = 0.0
-            if car.air:
-                total = car.air + p.vuelo
-                alto = math.sin(math.pi * p.vuelo / max(1, total))
-            self._car_sprite(car.x - camx, car.y + oy, car.a, CARBODY, CARROOF,
-                             k=1 + 0.45 * alto, sombra=2 + int(9 * alto))
+            self._jugador(car, camx, oy)
         if p.iman:
             self._halo(car.x - camx, car.y + oy)
         if p.heli is not None:
-            self._heli(p.heli.x - camx, p.heli.y + oy)
+            self._heli(p.heli, camx, oy)
+        pyxel.clip()
         self.fx.draw_flash(0, HUD, W, VIEW_H)
+        self._guia(camx, oy)
         self._flechas(camx, oy)
         self._radar()
         self._hud()
         self._mision_hud()
+        self._chips()
         self._draw_banner()
 
-    def _tile(self, img, px, py, tx, ty):
-        t = self.p.city.tile(tx, ty)
-        if t == ROAD:
-            img.rect(px, py, TILE, TILE, ASPHALT)
-            if tx % B == 0 and (ty % 3):
-                img.rect(px + TILE - 1, py, 2, TILE, LINE)
-            if ty % B == 0 and (tx % 3):
-                img.rect(px, py + TILE - 1, TILE, 2, LINE)
-        elif t == SIDEWALK:
-            img.rect(px, py, TILE, TILE, SIDE)
-            img.rectb(px, py, TILE, TILE, SIDE2)
-        elif t == GRASS:
-            img.rect(px, py, TILE, TILE, GRASS1)
-            img.pset(px + 4, py + 5, GRASS2)
-            img.pset(px + 11, py + 10, GRASS2)
-        elif t == TREE:
-            img.rect(px, py, TILE, TILE, GRASS1)
-            img.rect(px + 7, py + 8, 2, 5, TRUNK)
-            img.circ(px + 8, py + 6, 5, TREEDK)
-            img.circ(px + 8, py + 6, 4, TREETOP)
-        elif t == FOUNT:
-            img.rect(px, py, TILE, TILE, SIDE)
-            img.circ(px + 8, py + 8, 6, SIDE2)
-            img.circ(px + 8, py + 8, 4, WATER)
-            img.pset(px + 7, py + 6, WHITE)
-        else:  # BLD
-            bx, by = tx // B, ty // B
-            base = (BLD1, BLD2, BLD3)[(bx * 7 + by * 11) % 3]
-            img.rect(px, py, TILE, TILE, base)
-            img.rectb(px, py, TILE, TILE, ROOF)
-            for wy in (4, 10):
-                for wx in (4, 10):
-                    lit = (tx * 3 + ty * 5 + wx + wy) % 3 == 0
-                    img.rect(px + wx, py + wy, 2, 2, GLASS if lit else ROOF)
+    def _visible(self, x, y, m=24):
+        return -m < x < W + m and HUD - m < y < H + m
 
-    def _rampa(self, img, px, py, eje, tx, ty):
-        """una rampa amarilla con franjas: la flecha dice hacia dónde se salta."""
-        if eje == 0:                           # se salta en x: franjas verticales
-            img.rect(px + 2, py, 12, TILE, GOLD)
-            for i in range(0, TILE, 4):
-                img.rect(px + 2, py + i, 12, 2, SHADOW)
-            img.rect(px + 2, py, 2, TILE, ORANGE)
-            img.rect(px + 12, py, 2, TILE, ORANGE)
-        else:
-            img.rect(px, py + 2, TILE, 12, GOLD)
-            for i in range(0, TILE, 4):
-                img.rect(px + i, py + 2, 2, 12, SHADOW)
-            img.rect(px, py + 2, TILE, 2, ORANGE)
-            img.rect(px, py + 12, TILE, 2, ORANGE)
+    def _jugador(self, car, camx, oy):
+        p = self.p
+        x, y = car.x - camx, car.y + oy
+        if not self._visible(x, y):
+            return
+        alto = 0.0
+        if car.air:
+            total = car.air + p.vuelo
+            alto = math.sin(math.pi * p.vuelo / max(1, total))
+        ca, sa = math.cos(car.a), math.sin(car.a)
+        if p.nitro and not car.air:                  # la llamarada del nitro
+            fl = 6 + (self.f // 2) % 3 * 2
+            bx, by = x - ca * 11, y - sa * 11
+            for s, col in ((3, NITRO2), (2, NITRO1), (1, WHITE)):
+                pyxel.tri(bx - sa * s, by + ca * s, bx + sa * s, by - ca * s,
+                          bx - ca * fl * s / 3, by - sa * fl * s / 3, col)
+        art.rotados("auto").draw(x, y, car.a, k=1 + 0.45 * alto,
+                                 sombra=2 + int(9 * alto))
+        if self.thr < 0 and car.spd > 0.3 and not car.air:   # luces de freno
+            for s in (-4, 4):
+                hx = int(x - ca * 11 - sa * s)
+                hy = int(y - sa * 11 + ca * s)
+                pyxel.rect(hx - 1, hy - 1, 2, 2, LIGHTR)
+
+    def _cop(self, spr, x, y, a):
+        if not self._visible(x, y):
+            return
+        spr.draw(x, y, a)
+        izq = (self.f // 5) % 2
+        ca, sa = math.cos(a), math.sin(a)
+        for s, on in ((-1.5, izq), (1.5, not izq)):
+            if not on:
+                continue
+            bxp, byp = x - sa * s, y + ca * s
+            col = LIGHTR if s < 0 else LIGHTB
+            pyxel.dither(0.3)
+            pyxel.circ(int(bxp), int(byp), 6, col)
+            pyxel.dither(1.0)
+            pyxel.rect(int(bxp) - 1, int(byp) - 1, 3, 3, col)
+            pyxel.pset(int(bxp), int(byp), WHITE)
 
     def _banco(self, cx, cy):
-        """la boca del banco: un rombo verde en la calle con el $ adentro. late
-        cuando llevas lo suficiente como para depositar."""
+        """la boca del banco: un círculo verde en la calle con el banco
+        adentro. late y echa anillos cuando llevas lo suficiente."""
         cx, cy = int(cx), int(cy)
-        if not (-20 < cx < W + 20 and HUD - 20 < cy < H + 20):
+        if not self._visible(cx, cy, 30):
             return
         activo = self.p.money >= BANCO_MIN
-        r = BANCO_R - 2 + ((self.f // 5) % 2 if activo else 0)
-        col = BILL2 if activo else BILL
-        for i in range(4):
-            a0 = i * math.pi / 2 + self.f * 0.03
-            a1 = a0 + math.pi / 2
-            pyxel.line(int(cx + math.cos(a0) * r), int(cy + math.sin(a0) * r),
-                       int(cx + math.cos(a1) * r), int(cy + math.sin(a1) * r), col)
-        pyxel.rect(cx - 7, cy - 6, 14, 12, SHADOW)
-        pyxel.rectb(cx - 7, cy - 6, 14, 12, col)
+        f = self.f
         if activo:
-            big(cx - 3, cy - 5, "$", col, k=2, sh=None)
-        else:
-            text(cx - 1, cy - 2, "$", col)
+            rr = (f % 40) // 2
+            pyxel.circb(cx, cy, BANCO_R - 6 + rr, BILL if rr < 14 else BILL0)
+        col = BILL2 if activo else BILL
+        r = BANCO_R - 2
+        pyxel.dither(0.5)
+        pyxel.circ(cx, cy, r, BILL0)
+        pyxel.dither(1.0)
+        for i in range(8):
+            if i % 2:
+                continue
+            a0 = i * math.pi / 4 + f * 0.03
+            a1 = a0 + math.pi / 4
+            for d in (0, 1):
+                pyxel.line(int(cx + math.cos(a0) * (r - d)), int(cy + math.sin(a0) * (r - d)),
+                           int(cx + math.cos(a1) * (r - d)), int(cy + math.sin(a1) * (r - d)), col)
+        pyxel.circ(cx, cy, 9, OUTLINE)
+        pyxel.circ(cx, cy, 8, BILL0 if not activo else PANEL2)
+        icon("bank", cx, cy - 1)
 
     def _bill(self, cx, cy):
-        """un fajo de billetes, flotando apenas para que se vea desde lejos."""
-        cx, cy = int(cx), int(cy + (self.f // 8) % 2)
-        if not (-8 < cx < W + 8 and HUD - 8 < cy < H + 8):
+        """un fajo de billetes con su faja, flotando sobre su sombra."""
+        cx, cy = int(cx), int(cy)
+        if not self._visible(cx, cy, 10):
             return
-        pyxel.rect(cx - 5, cy - 1, 10, 5, SHADOW)
-        pyxel.rect(cx - 5, cy - 3, 10, 5, BILL)
-        pyxel.rect(cx - 5, cy - 3, 10, 1, BILL2)
-        pyxel.pset(cx, cy - 1, BILL2)
-        pyxel.pset(cx - 3, cy - 1, BILL2)
-        pyxel.pset(cx + 3, cy - 1, BILL2)
+        bob = (self.f // 8 + cx) % 4
+        bob = 1 if bob in (1, 3) else (2 if bob == 2 else 0)
+        pyxel.rect(cx - 5, cy + 3, 11, 2, art.sh(ASPHALT))
+        y = cy - 3 - bob
+        pyxel.rect(cx - 7, y - 1, 15, 9, OUTLINE)
+        pyxel.rect(cx - 6, y, 13, 7, BILL)
+        pyxel.rect(cx - 6, y, 13, 1, BILL2)
+        pyxel.rect(cx - 6, y + 4, 13, 1, BILL0)
+        pyxel.rect(cx - 6, y + 6, 13, 1, BILL0)
+        pyxel.rect(cx - 1, y, 3, 7, COP2)            # la faja
+        pyxel.pset(cx, y + 2, GOLD)
+        if (self.f + cx * 3) % 50 < 5:                # un destello
+            pyxel.pset(cx - 5, y - 2, WHITE)
+            pyxel.pset(cx - 6, y - 1, WHITE)
+            pyxel.pset(cx - 4, y - 1, WHITE)
 
     def _power(self, cx, cy, tipo):
-        """la caja de poder: late y trae su símbolo adentro."""
+        """la caja de poder: late, brilla y trae su símbolo adentro."""
         cx, cy = int(cx), int(cy)
-        if not (-10 < cx < W + 10 and HUD - 10 < cy < H + 10):
+        if not self._visible(cx, cy, 14):
             return
-        r = 7 + (self.f // 5) % 2
-        pyxel.rect(cx - r, cy - r, r * 2, r * 2, SHADOW)
         col = (NITRO1, MAGENTA, ACCENT, GOLD)[tipo]
-        pyxel.rectb(cx - r, cy - r, r * 2, r * 2, col)
-        pyxel.rectb(cx - r + 1, cy - r + 1, r * 2 - 2, r * 2 - 2, WHITE)
+        bob = (self.f // 6) % 4
+        bob = 1 if bob in (1, 3) else (2 if bob == 2 else 0)
+        pyxel.dither(0.25 + 0.1 * ((self.f // 5) % 2))
+        pyxel.circ(cx, cy, 13, col)
+        pyxel.dither(1.0)
+        pyxel.rect(cx - 6, cy + 5, 13, 3, art.sh(ASPHALT))
+        y = cy - bob
+        pyxel.rect(cx - 8, y - 8, 17, 16, OUTLINE)
+        pyxel.rect(cx - 7, y - 7, 15, 14, PANEL2)
+        pyxel.rect(cx - 7, y - 7, 15, 1, col)
+        pyxel.rect(cx - 7, y - 7, 1, 14, col)
+        pyxel.rect(cx - 7, y + 6, 15, 1, PANEL)
         if tipo == NITRO:                                  # un rayo
-            pyxel.line(cx + 1, cy - 4, cx - 2, cy, col)
-            pyxel.line(cx - 2, cy, cx + 1, cy, col)
-            pyxel.line(cx + 1, cy, cx - 1, cy + 4, col)
+            pyxel.tri(cx + 2, y - 5, cx - 3, y + 1, cx + 1, y, col)
+            pyxel.tri(cx - 1, y, cx + 3, y - 1, cx - 2, y + 5, col)
         elif tipo == IMAN:                                 # una herradura
-            pyxel.rectb(cx - 3, cy - 4, 7, 6, col)
-            pyxel.rect(cx - 2, cy - 1, 5, 4, SHADOW)
-            pyxel.rect(cx - 3, cy + 1, 2, 3, col)
-            pyxel.rect(cx + 2, cy + 1, 2, 3, col)
-        elif tipo == SOBORNO:                              # un billete doblado
-            pyxel.rect(cx - 4, cy - 2, 9, 5, col)
-            pyxel.pset(cx, cy, SHADOW)
+            pyxel.circ(cx, y, 4, col)
+            pyxel.circ(cx, y, 2, PANEL2)
+            pyxel.rect(cx - 2, y - 4, 5, 4, PANEL2)
+            pyxel.rect(cx - 4, y - 4, 2, 2, WHITE)
+            pyxel.rect(cx + 3, y - 4, 2, 2, WHITE)
+        elif tipo == SOBORNO:                              # un billete
+            pyxel.rect(cx - 5, y - 3, 11, 6, col)
+            pyxel.rect(cx - 1, y - 2, 3, 4, BILL0)
         else:                                              # un reloj
-            pyxel.circb(cx, cy, 4, col)
-            pyxel.line(cx, cy, cx, cy - 3, col)
-            pyxel.line(cx, cy, cx + 2, cy, col)
+            pyxel.circ(cx, y, 4, col)
+            pyxel.line(cx, y, cx, y - 3, OUTLINE)
+            pyxel.line(cx, y, cx + 2, y, OUTLINE)
 
     def _ped(self, ped, camx, oy):
         x, y = int(ped.x - camx), int(ped.y + oy)
-        if not (-8 < x < W + 8 and HUD - 8 < y < H + 8):
+        if not self._visible(x, y, 8):
             return
-        ropa = (PED1, PED2, PED3)[int(ped.x + ped.y) % 3]
+        k = int(ped.x * 0.1 + ped.y * 0.07) % 4
+        ropa = ROPA[(id(ped) // 16) % 4]
         paso = (self.f // (4 if ped.scared else 9)) % 2
-        pyxel.rect(x - 1, y + 3, 3, 1, SHADOW)
-        pyxel.rect(x - 1, y - 1, 3, 4, ropa)               # cuerpo
-        pyxel.pset(x - 1 + paso, y + 3, ropa)              # la pierna que pisa
-        pyxel.rect(x - 1, y - 3, 3, 2, SKIN)               # cabeza
+        pyxel.rect(x - 1, y + 4, 5, 1, art.sh(SIDE))       # sombra
+        pyxel.rect(x - 2, y - 1, 5, 6, OUTLINE)
+        pyxel.rect(x - 1, y, 3, 3, ropa)                   # cuerpo
+        pyxel.pset(x - 1 + paso * 2, y + 3, HAIR)          # la pierna que pisa
+        pyxel.rect(x - 2, y - 5, 5, 5, OUTLINE)
+        pyxel.rect(x - 1, y - 4, 3, 3, SKIN)               # cabeza
+        pyxel.rect(x - 1, y - 4, 3, 1, HAIR if k else PED3)
         if ped.scared:
-            pyxel.pset(x + (2 if paso else -2), y - 5, WHITE)   # gotita de susto
-
-    def _car_sprite(self, sx, sy, a, body, roof, cop=False, k=1.0, sombra=2):
-        if not (-24 < sx < W + 24 and HUD - 24 < sy < H + 24):
-            return
-        c1, s1 = math.cos(a), math.sin(a)
-        cosa, sina = c1 * k, s1 * k
-
-        def corner(f, s):
-            return (int(sx + f * cosa - s * sina), int(sy + f * sina + s * cosa))
-
-        fl, fr = corner(11, -6), corner(11, 6)
-        bl, br = corner(-11, -6), corner(-11, 6)
-        # la sombra queda del tamaño real, en el piso: es lo que hace leer el
-        # salto (el auto crece y se separa de su sombra)
-        sh = [(int(sx + f * c1 - s * s1) + sombra, int(sy + f * s1 + s * c1) + sombra)
-              for f, s in ((11, -6), (11, 6), (-11, 6), (-11, -6))]
-        pyxel.tri(*sh[0], *sh[1], *sh[2], SHADOW)
-        pyxel.tri(*sh[0], *sh[2], *sh[3], SHADOW)
-        pyxel.tri(*fl, *fr, *br, body)
-        pyxel.tri(*fl, *br, *bl, body)
-        rl, rr = corner(4, -4), corner(4, 4)
-        rbl, rbr = corner(-6, -4), corner(-6, 4)
-        pyxel.tri(*rl, *rr, *rbr, roof)
-        pyxel.tri(*rl, *rbr, *rbl, roof)
-        wl, wr = corner(9, -4), corner(9, 4)
-        pyxel.tri(*rl, *rr, *wr, GLASS)
-        pyxel.tri(*rl, *wr, *wl, GLASS)
-        for s in (-4, 4):
-            hx, hy = corner(11, s)
-            pyxel.pset(hx, hy, HEAD)
-        if cop:                                    # balizas rojo/azul alternando
-            izq = (self.f // 4) % 2
-            for s, on in ((-3, izq), (3, not izq)):
-                bxp, byp = corner(0, s)
-                pyxel.rect(bxp - 1, byp - 1, 2, 2, LIGHTR if on else LIGHTB)
+            pyxel.pset(x + (3 if paso else -3), y - 6, WHITE)   # gotita de susto
+            pyxel.pset(x + (3 if paso else -3), y - 5, NITRO1)
 
     def _halo(self, cx, cy):
         """el anillo del imán, girando, para que se note que está activo."""
-        for i in range(8):
-            a = self.f * 0.09 + i * math.tau / 8
-            pyxel.pset(int(cx + math.cos(a) * IMAN_R * 0.5),
-                       int(cy + math.sin(a) * IMAN_R * 0.5), MAGENTA)
+        for i in range(10):
+            a = self.f * 0.09 + i * math.tau / 10
+            px = int(cx + math.cos(a) * IMAN_R * 0.5)
+            py = int(cy + math.sin(a) * IMAN_R * 0.5)
+            pyxel.rect(px - 1, py - 1, 2, 2, MAGENTA if i % 2 else WHITE)
 
     def _bloqueo(self, b, camx, oy):
         """la barricada: vallas a franjas en los dos carriles y una patrulla
@@ -1525,23 +1552,27 @@ class World:
         if b["t"] < 90 and (self.f // 4) % 2:
             return
         cx, cy = int(b["x"] - camx), int(b["y"] + oy)
-        if not (-40 < cx < W + 40 and HUD - 40 < cy < H + 40):
+        if not self._visible(cx, cy, 40):
             return
         for tx, ty in b["tiles"]:
             px, py = int(tx * TILE - camx), int(ty * TILE + oy)
             if b["eje"] == 1:                       # calle vertical: valla horizontal
+                pyxel.rect(px, py + 11, TILE, 2, art.sh(ASPHALT))
+                pyxel.rect(px, py + 4, TILE, 8, OUTLINE)
                 pyxel.rect(px, py + 5, TILE, 6, WHITE)
                 for i in range(0, TILE, 6):
                     pyxel.rect(px + i, py + 5, 3, 6, LIGHTR)
-                pyxel.rect(px, py + 11, TILE, 1, SHADOW)
+                pyxel.rect(px, py + 5, TILE, 1, COP2)
             else:
+                pyxel.rect(px + 11, py, 2, TILE, art.sh(ASPHALT))
+                pyxel.rect(px + 4, py, 8, TILE, OUTLINE)
                 pyxel.rect(px + 5, py, 6, TILE, WHITE)
                 for i in range(0, TILE, 6):
                     pyxel.rect(px + 5, py + i, 6, 3, LIGHTR)
-                pyxel.rect(px + 11, py, 1, TILE, SHADOW)
+                pyxel.rect(px + 5, py, 1, TILE, COP2)
         a = 0.0 if b["eje"] == 1 else math.pi / 2
-        off = (0, -13) if b["eje"] == 1 else (-13, 0)
-        self._car_sprite(cx + off[0], cy + off[1], a, COP1, COP2, cop=True)
+        off = (0, -14) if b["eje"] == 1 else (-14, 0)
+        self._cop(art.rotados("cop"), cx + off[0], cy + off[1], a)
 
     def _mision_mundo(self, m, camx, oy):
         f = self.f
@@ -1550,91 +1581,167 @@ class World:
             cx, cy, r = m["cx"] - camx, m["cy"] + oy, m["r"]
             col = LIGHTR if (f // 6) % 2 else ORANGE
             n = 48
-            for i in range(n):
-                if i % 2:
-                    continue
+            for i in range(0, n, 2):
                 a0 = i * math.tau / n + f * 0.01
                 a1 = a0 + math.tau / n
                 x0, y0 = cx + math.cos(a0) * r, cy + math.sin(a0) * r
                 x1, y1 = cx + math.cos(a1) * r, cy + math.sin(a1) * r
-                pyxel.line(int(x0), int(y0), int(x1), int(y1), col)
-                pyxel.line(int(x0) + 1, int(y0), int(x1) + 1, int(y1), col)
+                if not (self._visible(x0, y0, 4) or self._visible(x1, y1, 4)):
+                    continue
+                for d in (0, 1, 2):
+                    pyxel.line(int(x0) + d, int(y0), int(x1) + d, int(y1),
+                               OUTLINE if d == 2 else col)
             return
         if m["tipo"] == "entrega":
             x, y = int(m["x"] - camx), int(m["y"] + oy)
+            if not self._visible(x, y, 30):
+                return
             if m["fase"] == 0:                      # el paquete, saltando
-                yy = y - 2 - (f // 6) % 3
-                pyxel.circb(x, y, 10 + (f // 5) % 3, ORANGE)
-                pyxel.rect(x - 5, yy - 4, 10, 8, TRUNK)
-                pyxel.rectb(x - 5, yy - 4, 10, 8, ORANGE)
-                pyxel.line(x, yy - 4, x, yy + 3, GOLD)
-                pyxel.line(x - 5, yy, x + 4, yy, GOLD)
+                yy = y - 3 - (f // 6) % 3
+                pyxel.circb(x, y, 12 + (f // 5) % 3, ORANGE)
+                pyxel.circb(x, y, 13 + (f // 5) % 3, OUTLINE)
+                pyxel.rect(x - 5, y + 3, 11, 2, art.sh(ASPHALT))
+                icon("paquete", x, yy)
             else:                                   # el punto de entrega
-                for rr in (14, 9):
-                    pyxel.circb(x, y, rr + (f // 4) % 3, ORANGE if rr == 14 else GOLD)
-                pyxel.rect(x - 1, y - 14, 2, 14, WHITE)
-                pyxel.tri(x + 1, y - 14, x + 9, y - 11, x + 1, y - 8, ORANGE)
+                for rr, col in ((16, ORANGE), (10, GOLD)):
+                    pyxel.circb(x, y, rr + (f // 4) % 3, col)
+                pyxel.rect(x + 1, y - 1, 6, 2, art.sh(ASPHALT))
+                pyxel.rect(x - 1, y - 17, 3, 17, OUTLINE)
+                pyxel.rect(x, y - 16, 1, 16, WHITE)
+                ond = (f // 6) % 2
+                pyxel.tri(x + 1, y - 16, x + 11, y - 13 + ond, x + 1, y - 9, ORANGE)
+                pyxel.line(x + 1, y - 16, x + 10, y - 13 + ond, GOLD)
             return
         # la carrera: la meta que toca, grande; las siguientes, chicas
         for i in range(m["n"], len(m["pts"])):
             x, y = int(m["pts"][i][0] - camx), int(m["pts"][i][1] + oy)
+            if not self._visible(x, y, 20):
+                continue
             if i == m["n"]:
-                pyxel.circb(x, y, 12 + (f // 4) % 3, NITRO1)
-                pyxel.circb(x, y, 9, WHITE)
-                big(x - 3, y - 5, str(i + 1), WHITE, k=2)
+                pyxel.circ(x, y, 11, OUTLINE)
+                pyxel.circb(x, y, 13 + (f // 4) % 3, NITRO1)
+                pyxel.circb(x, y, 10, WHITE)
+                pyxel.circb(x, y, 9, NITRO2)
+                big_ctext(x, y - 5, str(i + 1), WHITE, 2, OUTLINE)
             else:
+                pyxel.circ(x, y, 6, OUTLINE)
                 pyxel.circb(x, y, 6, NITRO2)
-                text(x - 1, y - 2, str(i + 1), NITRO2)
+                text(x - 1, y - 2, str(i + 1), NITRO1)
 
     def _foco(self, x, y):
         """el foco del helicóptero en el piso: se pone rojo cuando te tiene."""
         x, y = int(x), int(y)
         caliente = self.p.foco > 0
-        pyxel.dither(0.35)
-        pyxel.circ(x, y, FOCO_R, LIGHTR if caliente else WHITE)
+        pyxel.dither(0.30)
+        pyxel.circ(x, y, FOCO_R, LIGHTR if caliente else WINLIT)
+        pyxel.dither(0.5)
+        pyxel.circ(x, y, FOCO_R - 8, LIGHTR if caliente else WHITE)
         pyxel.dither(1.0)
         pyxel.circb(x, y, FOCO_R, LIGHTR if caliente and (self.f // 4) % 2
-                    else WHITE)
+                    else WINLIT)
         if caliente:
-            fx.bar(x - 14, y + FOCO_R + 3, 28, 3, self.p.foco / FOCO_MARCA,
-                   LIGHTR, SHADOW)
+            fx.bar(x - 15, y + FOCO_R + 4, 30, 4, self.p.foco / FOCO_MARCA,
+                   LIGHTR, SHADOW, OUTLINE)
 
-    def _heli(self, x, y):
-        x, y = int(x), int(y) - 18                  # vuela: se dibuja más arriba
-        pyxel.circ(x + 6, y + 20, 5, SHADOW)
-        pyxel.line(x, y, x - 13, y + 1, HELI1)       # cola
-        pyxel.rect(x - 15, y - 2, 3, 5, HELI1)
-        pyxel.circ(x, y, 5, HELI1)
-        pyxel.circ(x + 2, y, 3, GLASS)
-        a = self.f * 0.6
+    def _heli(self, h, camx, oy):
+        x, y = h.x - camx, h.y + oy - 30              # vuela: se dibuja más arriba
+        if not self._visible(x, y, 40):
+            return
+        a = math.atan2(h.vy, h.vx) if (h.vx or h.vy) else 0.0
+        spr = art.rotados("heli")
+        if not spr.ok[spr.idx(a)]:
+            spr._bake(spr.idx(a))
+        # la sombra va en el piso, corrida: así se lee que está alto
+        n = spr.idx(a)
+        c = spr.cell
+        pyxel.dither(0.6)
+        pyxel.blt(int(x) - c // 2 + 10, int(y) - c // 2 + 36, spr.img, (n % 8) * c,
+                  (n // 8) * c + 8 * c, c, c, art.TRANSP)
+        pyxel.dither(1.0)
+        spr.draw(x, y, a, sombra=None)
+        r = self.f * 0.7
+        pyxel.dither(0.15)
+        pyxel.circ(int(x), int(y), 16, MET2)
+        pyxel.dither(1.0)
         for da in (0, math.pi / 2):
-            c, s = math.cos(a + da) * 12, math.sin(a + da) * 12
-            pyxel.line(int(x - c), int(y - s), int(x + c), int(y + s), TXT)
-        pyxel.pset(x - 14, y, LIGHTR if (self.f // 6) % 2 else WHITE)
+            c_, s_ = math.cos(r + da) * 16, math.sin(r + da) * 16
+            pyxel.line(int(x - c_), int(y - s_), int(x + c_), int(y + s_), OUTLINE)
+            pyxel.line(int(x - c_) + 1, int(y - s_), int(x + c_) + 1, int(y + s_), MET2)
+        pyxel.circ(int(x), int(y), 2, OUTLINE)
+        pyxel.pset(int(x), int(y), MET2)
+        tx, ty = x - math.cos(a) * 12, y - math.sin(a) * 12
+        pyxel.rect(int(tx) - 1, int(ty) - 1, 2, 2, LIGHTR if (self.f // 6) % 2 else WHITE)
 
-    # --- flechas, radar y hud ----------------------------------------------
+    # --- guía, flechas, radar y hud ----------------------------------------
+    def _meta(self):
+        """el objetivo principal (x, y, color), o None: la misión, si no el banco."""
+        p, car = self.p, self.p.car
+        m = p.mision
+        if m is not None and m["tipo"] == "escape":
+            a = math.atan2(car.y - m["cy"], car.x - m["cx"])
+            return (car.x + math.cos(a) * 200, car.y + math.sin(a) * 200, LIGHTR)
+        for x, y, kind, _ in p.objetivos():
+            return (x, y, OBJ_COL[kind])
+        return None
+
+    def _guia(self, camx, oy):
+        """la flecha de misión: un chevrón grande que gira alrededor del auto
+        y apunta a donde hay que ir, como en el gta. no se pierde nunca."""
+        meta = self._meta()
+        if meta is None:
+            return
+        car = self.p.car
+        x, y, col = meta
+        dx, dy = x - car.x, y - car.y
+        d = math.hypot(dx, dy)
+        if d < 44:
+            return
+        a = math.atan2(dy, dx)
+        ca, sa = math.cos(a), math.sin(a)
+        cx, cy = car.x - camx, car.y + oy
+        r = 24 + (self.f // 6) % 3
+        px_, py_ = -sa, ca                           # la perpendicular
+
+        def punta(e):
+            """las cuatro puntas del chevrón, engordado e px (el contorno)."""
+            t = (cx + ca * (r + 12 + e * 1.6), cy + sa * (r + 12 + e * 1.6))
+            l = (cx + ca * (r - e) + px_ * (10 + e), cy + sa * (r - e) + py_ * (10 + e))
+            rr = (cx + ca * (r - e) - px_ * (10 + e), cy + sa * (r - e) - py_ * (10 + e))
+            n = (cx + ca * (r + 2 - e), cy + sa * (r + 2 - e))
+            return t, l, rr, n
+
+        t, l, rr, n = punta(2)
+        pyxel.tri(*t, *l, *n, OUTLINE)
+        pyxel.tri(*t, *rr, *n, OUTLINE)
+        t, l, rr, n = punta(0)
+        luz = WHITE if (self.f // 8) % 4 == 0 else col
+        pyxel.tri(*t, *l, *n, luz)
+        pyxel.tri(*t, *rr, *n, luz)
+        pyxel.line(*t, *l, WHITE)
+
     def _flechas(self, camx, oy):
-        """a dónde ir: una flecha gorda en el borde de la pantalla por cada
-        objetivo fuera de vista, con su ícono y la distancia. en el teléfono la
-        pantalla es chica y el radar no alcanza para orientarse."""
+        """a dónde ir: un ícono en el borde de la pantalla por cada objetivo
+        fuera de vista, con la distancia; si se ve, una flecha que rebota encima."""
         p = self.p
         car = p.car
         ccx, ccy = car.x - camx, car.y + oy
         f = self.f
-        top = HUD + (30 if p.mision else 8)
-        left, right, bot = 10, W - 10, H - 10
+        top = HUD + (40 if p.mision else 12)
+        left, right, bot = 12, W - 12, H - 12
         for x, y, kind, lab in p.objetivos():
             col = OBJ_COL[kind]
             sx, sy = x - camx, y + oy
             if left <= sx <= right and HUD + 6 <= sy <= bot:
-                # a la vista: una flecha que rebota encima del objetivo
-                yy = int(sy) - 20 - (f // 5) % 3
-                pyxel.tri(int(sx) - 5, yy, int(sx) + 5, yy, int(sx), yy + 6, col)
-                pyxel.rect(int(sx) - 2, yy - 5, 5, 5, col)
+                yy = int(sy) - 24 - (f // 5) % 3
+                ix = int(sx)
+                pyxel.tri(ix - 7, yy - 1, ix + 7, yy - 1, ix, yy + 8, OUTLINE)
+                pyxel.rect(ix - 4, yy - 9, 9, 9, OUTLINE)
+                pyxel.tri(ix - 5, yy, ix + 5, yy, ix, yy + 6, col)
+                pyxel.rect(ix - 2, yy - 7, 5, 7, col)
+                pyxel.rect(ix - 2, yy - 7, 1, 7, WHITE)
                 continue
             dx, dy = sx - ccx, sy - ccy
             a = math.atan2(dy, dx)
-            # el punto del borde en esa dirección
             t = 1e9
             if dx > 0:
                 t = min(t, (right - ccx) / dx)
@@ -1646,60 +1753,60 @@ class World:
                 t = min(t, (top - ccy) / dy)
             ex, ey = ccx + dx * t, ccy + dy * t
             ca, sa = math.cos(a), math.sin(a)
-            bx, by = ex - ca * 9, ey - sa * 9         # el centro del ícono
-            tipx, tipy = ex + ca * 1, ey + sa * 1
-            lx, ly = bx + math.cos(a + 1.9) * 8, by + math.sin(a + 1.9) * 8
-            rx, ry = bx + math.cos(a - 1.9) * 8, by + math.sin(a - 1.9) * 8
-            pyxel.tri(int(tipx), int(tipy), int(lx), int(ly), int(rx), int(ry), col)
-            ix, iy = int(bx - ca * 5), int(by - sa * 5)
-            pyxel.circ(ix, iy, 6, SHADOW)
-            pyxel.circb(ix, iy, 6, col if (f // 8) % 2 else WHITE)
-            if lab:
+            ix, iy = int(ex - ca * 10), int(ey - sa * 10)
+            tipx, tipy = ex + ca * 2, ey + sa * 2
+            lx, ly = ix + math.cos(a + 1.2) * 9, iy + math.sin(a + 1.2) * 9
+            rx, ry = ix + math.cos(a - 1.2) * 9, iy + math.sin(a - 1.2) * 9
+            pyxel.tri(tipx, tipy, lx, ly, rx, ry, col)
+            pyxel.circ(ix, iy, 8, OUTLINE)
+            pyxel.circ(ix, iy, 7, PANEL)
+            pyxel.circb(ix, iy, 7, col if (f // 8) % 2 else WHITE)
+            if lab and kind != "banco":
                 text(ix - 1, iy - 2, lab, WHITE)
+            elif kind == "banco":
+                pyxel.rect(ix - 1, iy - 4, 2, 8, BILL2)
+                pyxel.rect(ix - 3, iy - 2, 6, 1, BILL2)
+                pyxel.rect(ix - 3, iy + 1, 6, 1, BILL2)
             elif kind == "paquete":
-                pyxel.rect(ix - 3, iy - 2, 6, 5, ORANGE)
+                pyxel.rect(ix - 3, iy - 3, 7, 6, ORANGE)
+                pyxel.rect(ix, iy - 3, 1, 6, GOLD)
             else:
-                pyxel.rect(ix - 1, iy - 3, 2, 6, WHITE)
+                pyxel.rect(ix - 1, iy - 4, 1, 8, WHITE)
+                pyxel.tri(ix, iy - 4, ix + 4, iy - 2, ix, iy, ORANGE)
             dist = "%dm" % (math.hypot(x - car.x, y - car.y) / 4)
             if abs(ey - top) < 2 or abs(ey - bot) < 2:     # borde de arriba/abajo
-                tx_ = ix + 9 if ix < W - 40 else ix - 9 - len(dist) * 4
+                tx_ = ix + 11 if ix < W - 44 else ix - 11 - len(dist) * 4
                 ty_ = iy - 2
             else:                                          # costados
                 tx_ = max(2, min(W - len(dist) * 4 - 2, ix - len(dist) * 2))
-                ty_ = iy + 9
-            stext(tx_, ty_, dist, col)
+                ty_ = iy + 11 if sy > ccy else iy - 16
+            stext(tx_, ty_, dist, col, OUTLINE)
         # las patrullas que vienen y todavía no se ven: balizas en el borde
         if (f // 5) % 2:
             for cop in p.cops:
                 sx, sy = cop.x - camx, cop.y + oy
                 if 0 <= sx < W and HUD <= sy < H:
                     continue
-                ex = max(3, min(W - 6, sx))
-                ey = max(HUD + 3, min(H - 6, sy))
-                pyxel.rect(int(ex), int(ey), 4, 4, LIGHTR if (f // 10) % 2 else LIGHTB)
+                ex = int(max(4, min(W - 8, sx)))
+                ey = int(max(HUD + 4, min(H - 8, sy)))
+                col = LIGHTR if (f // 10) % 2 else LIGHTB
+                pyxel.rect(ex - 1, ey - 1, 6, 6, OUTLINE)
+                pyxel.rect(ex, ey, 4, 4, col)
+                pyxel.pset(ex + 1, ey + 1, WHITE)
 
     def _radar(self):
-        """el plano, a 2 px por tile, en una ventana alrededor tuyo.
-
-        se pinta UNA vez a una imagen y se estampa con blt; los puntos que se
-        mueven van encima. lo que queda fuera de la ventana (el banco, la
-        misión) se dibuja pegado al borde, para que siempre diga hacia dónde.
-        """
+        """el plano, a 2 px por tile, en una ventana alrededor tuyo. lo que
+        queda fuera (el banco, la misión) se dibuja pegado al borde."""
         p = self.p
         if self.radar is None:
-            img = pyxel.Image(MW * 2, MH * 2)
-            for ty in range(MH):
-                for tx in range(MW):
-                    t = p.city.tile(tx, ty)
-                    img.rect(tx * 2, ty * 2, 2, 2, MAPRD if t == ROAD else
-                             (GRASS1 if t in (GRASS, TREE) else MAPBG))
-            self.radar = img
+            self.radar = art.radar_image(p.city, KINDS)
         car = p.car
         u = int(max(0, min(MW * 2 - RW, car.x / TILE * 2 - RW / 2)))
         v = int(max(0, min(MH * 2 - RH, car.y / TILE * 2 - RH / 2)))
-        mx, my = W - RW - 4, H - RH - 4
-        pyxel.rect(mx - 2, my - 2, RW + 4, RH + 4, SHADOW)
+        mx, my = W - RW - 5, H - RH - 5
+        pyxel.rect(mx - 3, my - 3, RW + 6, RH + 6, OUTLINE)
         pyxel.blt(mx, my, self.radar, u, v, RW, RH)
+        pyxel.rectb(mx - 2, my - 2, RW + 4, RH + 4, PANEL3)
         f = self.f
 
         def punto(x, y, n, col, borde=False):
@@ -1727,75 +1834,80 @@ class World:
                 punto(cop.x, cop.y, 3, LIGHTR)
             if p.heli is not None:
                 punto(p.heli.x, p.heli.y, 3, MAGENTA)
-        punto(car.x, car.y, 3, WHITE)
-        pyxel.rectb(mx - 1, my - 1, RW + 2, RH + 2, DIM)
+        # tú: un punto con la nariz hacia donde miras
+        px = mx + car.x / TILE * 2 - u
+        py = my + car.y / TILE * 2 - v
+        pyxel.rect(int(px) - 1, int(py) - 1, 3, 3, WHITE)
+        pyxel.pset(int(px + math.cos(car.a) * 3), int(py + math.sin(car.a) * 3), GOLD)
 
     def _hud(self):
         p = self.p
         f = self.f
         pyxel.rect(0, 0, W, HUD, PANEL)
-        pyxel.rect(0, HUD - 1, W, 1, ASPHALT)
+        pyxel.rect(0, 0, W, 1, PANEL3)
+        pyxel.rect(0, HUD - 2, W, 1, PANEL3)
+        pyxel.rect(0, HUD - 1, W, 1, OUTLINE)
         # la plata que llevas encima: lo que te pueden sacar
-        s = "$%d" % p.money
-        big(4, 3, s, BILL2)
-        x = 4 + big_w(s) + 6
+        icon("bill", 3, 4, center=False)
+        s = "%d" % p.money
+        big_text(22, 5, s, BILL2, 2, OUTLINE)
+        x = 22 + big_width(s, 2) + 5
         m = p.mult()
         if m > 1:
             col = GOLD if self.combo_pop and (f // 3) % 2 else ORANGE
-            big(x, 3, "x%d" % m, col)
-            fx.bar(x, 16, big_w("x%d" % m), 3, p.racha_t / RACHA_TTL, GOLD, ASPHALT)
+            big_text(x, 5, "x%d" % m, col, 2, OUTLINE)
+            fx.bar(x, 18, big_width("x%d" % m, 2), 2, p.racha_t / RACHA_TTL, GOLD, PANEL3)
         # lo guardado, chico, debajo
         if p.banco:
-            text(4, 17, "banco $%d" % p.banco, BILL)
+            stext(22, 20, "banco $%d" % p.banco, BILL, OUTLINE)
         # las estrellas, grandes y al centro. titilan mientras te pierden
         n = WANTED_MAX
-        x0 = W // 2 - n * 13 // 2 + 6
+        x0 = W // 2 - 2 * 14 - 2
         perdiendo = p.evade > 0 and (f // 6) % 2
         for i in range(n):
             lleno = i < p.wanted
             if lleno and not perdiendo:
-                col = LIGHTR if (f // 8 + i) % 2 else GOLD
+                k = 1 if (f // 8 + i) % 2 else 0
             elif lleno:
-                col = DIM
+                k = 3
             else:
-                col = None
-            self._estrella(x0 + i * 13, 10, col)
+                k = 2
+            icon(("star", k), x0 + i * 14 + 2, 11)
         if p.wanted:
             if p.evade > 0:
-                fx.bar(x0 - 6, 20, n * 13 - 2, 3, p.evade / EVADE_T, ACCENT, ASPHALT)
+                fx.bar(x0 - 5, 21, n * 14 - 1, 3, p.evade / EVADE_T, ACCENT, PANEL3)
             elif p.heli is not None:
-                text(W // 2 - 22, 19, "helicóptero", MAGENTA)
+                ctext(W // 2 + 2, 21, "helicóptero", MAGENTA)
             elif p.bloqueos:
-                text(W // 2 - 16, 19, "bloqueos", LIGHTR)
+                ctext(W // 2 + 2, 21, "bloqueos", LIGHTR)
         # el reloj: grande, y rojo en los últimos 10 segundos
         sec = (p.time + 59) // 60
         r = "%d" % sec
         col = (LIGHTR if f % 30 < 15 else WHITE) if sec <= 10 else TXT
-        big(W - big_w(r) - 12, 3, r, col)
-        text(W - 9, 9, "s", col)
-        # los poderes activos, en chips debajo de la barra
-        y = HUD + 3
-        for activo, ttl, nom, col in ((p.nitro, NITRO_TTL, "NITRO", NITRO1),
-                                      (p.iman, IMAN_TTL, "IMÁN", MAGENTA)):
-            if activo:
-                pyxel.rect(3, y, 62, 11, SHADOW)
-                text(6, y + 3, nom, col)
-                fx.bar(30, y + 4, 32, 3, activo / ttl, col, ASPHALT)
-                y += 13
-        if p.drift > 6:
-            pyxel.rect(3, y, 62, 11, SHADOW)
-            text(6, y + 3, "DERRAPE", GOLD)
-            fx.bar(36, y + 4, 26, 3, min(1.0, p.drift / DRIFT_MIN), GOLD, ASPHALT)
+        tw = big_width(r, 2)
+        big_text(W - 5 - tw, 5, r, col, 2, OUTLINE)
+        icon("clock", W - 5 - tw - 10, 11)
+        fx.bar(W - 5 - tw - 17, 22, tw + 17, 2, p.time / TIME, col, PANEL3)
 
-    def _estrella(self, x, y, col):
-        """una estrella de 9 px; vacía, sólo el contorno apagado."""
-        if col is None:
-            col = MAPRD                    # el hueco: la misma estrella, apagada
-        pyxel.tri(x, y - 5, x - 2, y, x + 2, y, col)
-        pyxel.rect(x - 5, y - 1, 11, 2, col)
-        pyxel.tri(x - 1, y, x - 4, y + 5, x + 1, y + 1, col)
-        pyxel.tri(x + 1, y, x + 4, y + 5, x - 1, y + 1, col)
-        pyxel.rect(x - 2, y - 1, 5, 3, col)
+    def _chips(self):
+        """los poderes activos y el derrape en curso, en chips a la izquierda."""
+        p = self.p
+        y = H - 18
+        if p.drift > 6:
+            self._chip(y, "DERRAPE", GOLD, min(1.0, p.drift / DRIFT_MIN))
+            y -= 15
+        for activo, ttl, nom, col in ((p.iman, IMAN_TTL, "IMÁN", MAGENTA),
+                                      (p.nitro, NITRO_TTL, "NITRO", NITRO1)):
+            if activo:
+                self._chip(y, nom, col, activo / ttl)
+                y -= 15
+
+    def _chip(self, y, nom, col, frac):
+        pyxel.rect(3, y, 74, 13, OUTLINE)
+        pyxel.rect(4, y + 1, 72, 11, PANEL)
+        pyxel.rect(4, y + 1, 2, 11, col)
+        text(9, y + 4, nom, col)
+        fx.bar(41, y + 5, 32, 3, frac, col, PANEL3)
 
     def _mision_hud(self):
         m = self.p.mision
@@ -1810,16 +1922,17 @@ class World:
             sub = "meta %d de %d" % (m["n"] + 1, len(m["pts"]))
         else:
             sub = "sal del círculo rojo"
-        bw = 170
-        bx, by = W // 2 - bw // 2, HUD + 2
-        pyxel.rect(bx, by, bw, 24, SHADOW)
-        pyxel.rect(bx, by, 3, 24, col)
-        fx.bar(bx + 3, by + 22, bw - 3, 2, m["t"] / m["t0"], col, ASPHALT)
-        big(bx + 8, by + 3, tit, col)
+        bw = W - 12
+        bx, by = 6, HUD + 3
+        pyxel.rect(bx - 1, by - 1, bw + 2, 32, OUTLINE)
+        pyxel.rect(bx, by, bw, 30, PANEL)
+        pyxel.rect(bx, by, 4, 30, col)
+        fx.bar(bx + 4, by + 27, bw - 4, 3, m["t"] / m["t0"], col, PANEL3)
+        big_text(bx + 10, by + 5, tit, col, 2, OUTLINE)
+        text(bx + 10, by + 18, sub, TXT)
         r = "%d" % sec
         tc = (LIGHTR if (self.f // 8) % 2 else WHITE) if sec <= 5 else WHITE
-        big(bx + bw - big_w(r) - 5, by + 3, r, tc)
-        text(bx + 8, by + 15, sub, TXT)
+        big_text(bx + bw - big_width(r, 2) - 6, by + 5, r, tc, 2, OUTLINE)
 
     def _draw_banner(self):
         b = self.banner
@@ -1828,30 +1941,134 @@ class World:
         s, col, vida, sub, vida0 = b
         if vida < 12 and (self.f // 2) % 2:
             return
-        y = HUD + 34 + max(0, (vida - vida0 + 8)) * 3   # entra bajando
-        w = max(big_w(s, 3), len(sub) * 4) + 16
-        pyxel.dither(0.75)
-        pyxel.rect(W // 2 - w // 2, y - 4, w, 30 if sub else 24, SHADOW)
+        # arriba, debajo de la misión: el auto anda siempre más abajo, así el
+        # cartel nunca lo tapa
+        base = HUD + (40 if self.p.mision else 10)
+        y = base + 6 - max(0, (vida - vida0 + 8)) * 3      # entra bajando
+        k = 3 if big_width(s, 3) <= W - 16 else 2
+        w = max(big_width(s, k), len(sub) * 4) + 20
+        hgt = (6 * k + 12) + (10 if sub else 0)
+        pyxel.dither(0.8)
+        pyxel.rect(W // 2 - w // 2, y - 6, w, hgt, SHADOW)
         pyxel.dither(1.0)
-        cbig(W // 2, y, s, col, k=3)
+        pyxel.rect(W // 2 - w // 2, y - 6, w, 1, col)
+        pyxel.rect(W // 2 - w // 2, y - 7 + hgt, w, 1, col)
+        bctext(W // 2, y, s, col, k, OUTLINE)
         if sub:
-            ctext(W // 2, y + 19, sub, WHITE)
+            ctext(W // 2, y + 6 * k + 3, sub, WHITE)
+
+
+class AutosCabinet(Cabinet):
+    """el Cabinet de siempre; sólo cambia la portada: la ciudad de fondo,
+    paseándose, con un auto que la cruza y las patrullas atrás. si algo de
+    esto fallara, vuelve al título de fábrica."""
+
+    _city = None
+
+    def _draw_title(self):
+        try:
+            self._autos_title()
+        except Exception:
+            super()._draw_title()
+
+    def _autos_title(self):
+        from pixelkit import scores
+        a = self.anim
+        if AutosCabinet._city is None:
+            AutosCabinet._city = City()
+        city = AutosCabinet._city
+        img = art.city_image(city, B, KINDS)
+        # mientras se mira la portada se hornean los autos rotados, de a poco
+        for _ in range(3):
+            art.warm()
+        # la cámara baja por una avenida, lento, y da la vuelta
+        span = MAP_PY - H
+        t = (a * 0.35) % (2 * span)
+        camy = t if t < span else 2 * span - t
+        camx = 2 * B * TILE - 40
+        pyxel.blt(0, 0, img, camx, int(camy), W, H)
+        # un auto que baja por la calle, perseguido
+        av = 2 * B * TILE + 8 - camx
+        cy = (a * 2.2) % (H + 140) - 60
+        art.rotados("auto").draw(av, cy, math.pi / 2)
+        cop = art.rotados("cop")
+        for i, d in enumerate((52, 84)):
+            yy = cy - d
+            cop.draw(av + (8 if i else -6), yy, math.pi / 2)
+            izq = (a // 5 + i) % 2
+            pyxel.rect(int(av + (8 if i else -6)) - 1 + (2 if izq else -2), int(yy) - 1, 3, 3,
+                       LIGHTR if izq else LIGHTB)
+        art.oscurecer()
+        cx = W / 2
+        # el logo
+        y = 30
+        s = 6
+        tw = big_width(self.title, s)
+        pyxel.rect(cx - tw / 2 - 10, y - 10, tw + 20, 6 * s + 64, OUTLINE)
+        pyxel.rect(cx - tw / 2 - 8, y - 8, tw + 16, 6 * s + 60, PANEL)
+        pyxel.rect(cx - tw / 2 - 8, y - 8, tw + 16, 2, CARBODY)
+        pyxel.rect(cx - tw / 2 - 8, y + 6 * s + 50, tw + 16, 2, CARBODY)
+        big_ctext(cx + 3, y + 3, self.title, CAR0, s)
+        big_ctext(cx, y, self.title, GOLD, s)
+        sx = (a * 3) % (tw + 80) - 40
+        if 0 <= sx < tw:
+            pyxel.dither(0.5)
+            pyxel.rect(cx - tw / 2 + sx, y, 6, 5 * s, WHITE)
+            pyxel.dither(1.0)
+        ctext(cx, y + 6 * s + 10, self.subtitle, TXT)
+        # las estrellas de búsqueda, de adorno
+        ic, box = icons()
+        for i in range(5):
+            k = 1 if (a // 8 + i) % 2 else 0
+            icon(("star", k), cx - 28 + i * 14, y + 6 * s + 32)
+        # el llamado a jugar
+        py = 142
+        call = "toca para jugar" if web.is_touch() else "enter para jugar"
+        lit = self._blink(24)
+        pw = big_width(call, 1) + 22
+        pyxel.rect(cx - pw / 2 - 1, py - 6, pw + 2, 17, OUTLINE)
+        pyxel.rect(cx - pw / 2, py - 5, pw, 15, ACCENT if lit else PANEL)
+        ctext(cx, py, call, OUTLINE if lit else ACCENT)
+        # cómo se juega
+        lines = self.howto[:6]
+        hy = 170
+        bw = W - 24
+        hh = 16 + 11 * len(lines)
+        pyxel.rect(cx - bw / 2 - 1, hy - 1, bw + 2, hh + 2, OUTLINE)
+        pyxel.rect(cx - bw / 2, hy, bw, hh, PANEL)
+        pyxel.rect(cx - bw / 2, hy, bw, 1, PANEL3)
+        ctext(cx, hy + 5, "cómo se juega", GOLD)
+        for i, line in enumerate(lines):
+            ctext(cx, hy + 17 + i * 11, line, TXT)
+        # los mejores
+        lst = scores.top(self.id, 3)
+        if lst:
+            ry = hy + hh + 10
+            rh = 18 + 20 * len(lst)
+            pyxel.rect(cx - bw / 2 - 1, ry - 1, bw + 2, rh + 2, OUTLINE)
+            pyxel.rect(cx - bw / 2, ry, bw, rh, PANEL)
+            pyxel.rect(cx - bw / 2, ry, bw, 1, BILL)
+            ctext(cx, ry + 5, "mejores atracos", DIM)
+            for i, e in enumerate(lst):
+                bctext(cx, ry + 17 + 20 * i, "%s $%d" % (e["ini"], e["score"]),
+                          GOLD if i == 0 else TXT, 2, OUTLINE)
 
 
 class Game:
     def __init__(self):
         touch = con_dedo()
-        Cabinet(
+        AutosCabinet(
             game_id="autos", title="AUTOS", subtitle="90 segundos de atraco",
             howto=["acelera solo · freno + doblar = derrape" if touch
                    else "flechas manejan · freno + doblar = derrape",
                    "levanta fajos sin chocar: multiplican",
                    "misiones, saltos y derrapes pagan extra",
                    "la plata trae patrullas: piérdelas",
-                   "el banco guarda lo que llevas encima"],
+                   "el banco guarda lo que llevas encima",
+                   "sigue la flecha que gira junto a tu auto"],
             width=W, height=H, palette=PAL, scale=2, scoring=True,
-            ui=UIColors(bg=BG, text=TXT, dim=DIM, accent=ACCENT,
-                        warn=CARBODY, shadow=SHADOW, panel=ASPHALT),
+            ui=UIColors(bg=BG, text=TXT, dim=DIM, accent=GOLD,
+                        warn=CARBODY, shadow=SHADOW, panel=PANEL2),
             make_world=lambda: World(),
         ).run()
 

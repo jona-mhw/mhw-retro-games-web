@@ -937,6 +937,28 @@ def test_en_el_celular_acelera_solo():
     finally:
         pyxel.btn = viejo
 
+def test_la_camara_mira_adelante():
+    """en vertical la cámara se adelanta hacia donde vas: yendo para arriba el
+    auto queda abajo en la pantalla (se ve el camino de adelante) y al revés."""
+    from games.autos.game import HUD, VIEW_H
+    centro = HUD + VIEW_H / 2
+    for rumbo, signo in ((-math.pi / 2, 1), (math.pi / 2, -1)):
+        w = World(seed=5, auto=False)
+        car = w.p.car
+        x0, y0 = 2 * B * TILE + 8, MH * TILE // 2
+        car.x, car.y = x0, y0
+        car.a = car.va = rumbo
+        w.camx, w.camy = w._cam_target()
+        for _ in range(90):
+            car.x, car.y = x0, y0
+            car.spd = Car.MAXSPD
+            w.tick(0, 0)
+        y = car.y - w.camy + HUD
+        chk((y - centro) * signo > 60, "la cámara mira adelante (rumbo %.1f: el auto "
+            "en y=%d, el centro en %d)" % (rumbo, y, centro))
+        chk(HUD + 80 <= y <= HUD + VIEW_H - 70, "sin pegar el auto al borde (y=%d)" % y)
+
+
 if __name__ == "__main__":
     for fn in (test_ciudad, test_auto_acelera,
                test_el_tope_de_velocidad_es_de_verdad,
@@ -976,7 +998,8 @@ if __name__ == "__main__":
                test_si_te_pierden_baja_una_estrella,
                test_el_soborno_levanta_bloqueos_y_helicoptero,
                test_jugando_de_verdad_termina_a_tiempo_y_paga,
-               test_en_el_celular_acelera_solo):
+               test_en_el_celular_acelera_solo,
+               test_la_camara_mira_adelante):
         fn()
     print()
     print("=== TODO OK ===" if not FALLAS else "=== %d FALLAS ===" % len(FALLAS))

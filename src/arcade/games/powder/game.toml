@@ -5,8 +5,8 @@ module   = "games.powder"
 title    = "Powder"
 author   = "Jona"
 year     = 2026
-width    = 320
-height   = 240
+width    = 224
+height   = 336
 blurb    = "23 materiales que caen, arden y fluyen: cohetes, virus, rayos, clonador y un agujero negro"
 controls = "click pinta · der borra · rueda o z pincel · x deshace · 1-0 o tab material · espacio pausa · h menú · esc salir"
 
