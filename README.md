@@ -11,8 +11,10 @@ Pyodide). la primera carga baja el runtime (~10 MB) y después queda en caché.
 
 ## los juegos
 
-- **neón** *(nuevo)* — shoot'em up vertical synthwave, el único en formato
-  parado: llena el celular. se mueve con el trackpad y dispara solo; roces que
+todos van en formato parado (~240x360) para llenar el celular vertical, y el
+canvas se dibuja a la resolución real de la pantalla, con píxeles parejos.
+
+- **neón** *(nuevo)* — shoot'em up vertical synthwave. se mueve con el trackpad y dispara solo; roces que
   pagan, cadena hasta x8, el mini-jefe CENTINELA y el jefe final OCASO-85.
 - **asteroides** — oleadas anunciadas, minas en cadena, cometas, auto-fuego,
   poderes y una tormenta final.
