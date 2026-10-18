@@ -24,7 +24,7 @@ import sys
 import pyxel
 
 from pixelkit import config, crt, scores, web
-from pixelkit.pxtext import CW, ctext, text
+from pixelkit.pxtext import CW, big_ctext, big_text, ctext, text
 from pixelkit.registry import discover_games
 
 # en el celular parado el menú es vertical: filas más altas, que se tocan con
@@ -331,10 +331,14 @@ class MenuApp:
         blink = (pyxel.frame_count // 16) % 2 == 0
         if PORTRAIT:
             self._draw_horizon(34, HEAD_H)
+        if PORTRAIT:
+            # el logo a 2x, cian con sombra magenta: neón de 1985
+            big_ctext(W / 2 + 1, 8, "MHW RETRO FUTURE", HEAD, 2)
+            big_ctext(W / 2, 7, "MHW RETRO FUTURE", ACC, 2)
+            ctext(W / 2, 24, "el futuro, como se veía en 1985", TXT if blink else DIM)
+            return
         ctext(W / 2, 11, "M H W   R E T R O   F U T U R E", ACC if blink else HEAD)
         ctext(W / 2, 25, "el futuro, como se veía en 1985", DIM)
-        if PORTRAIT:
-            return
         # una línea de neón que se abre desde el centro, en cian y magenta: es
         # todo el guiño retrofuturista que se permite el header. probé un
         # abanico de rieles en perspectiva y en 7 px de alto no se lee como
@@ -402,6 +406,11 @@ class MenuApp:
         cy = y + bh // 2
         pyxel.tri(x + 5, cy - 3, x + 5, cy + 3, x + 10, cy, color)
 
+    def _best(self, gid):
+        """el mejor puntaje de un juego, como texto ("" si no tiene)."""
+        lst = scores.top(gid, 1, self.board)
+        return str(lst[0]["score"]) if lst else ""
+
     def _draw_card(self, i, g):
         x, y, w, bh, sel = self._row_box(i)
         ty = self._text_y(y, bh)
@@ -409,11 +418,19 @@ class MenuApp:
         pyxel.rectb(x, y, w, bh, ACC if sel else LINE)
         if sel:
             self._cursor_tri(x, y, bh, ACC)
-        text(x + 15, ty, g.title.upper(), ACC if sel else TXT2)
-        tag = "%dx%d" % (g.width, g.height)
-        text(x + w - len(tag) * CW - 5, ty, tag, TXT2 if sel else DIM)
+        # en vertical las filas dan para el título a 2x: se lee de lejos
+        big = PORTRAIT and bh >= 14
+        if big:
+            ty = y + (bh - 10) // 2 + 1
+            big_text(x + 15, ty, g.title.upper(), ACC if sel else TXT2, 2, SHADOW)
+            ty += 3
+        else:
+            text(x + 15, ty, g.title.upper(), ACC if sel else TXT2)
+        # a la derecha, el récord a batir (antes iba el tamaño de pantalla)
+        tag = self._best(g.id)
+        text(x + w - len(tag) * CW - 5, ty, tag, AMBER if sel else DIM)
         if g.badge:                         # "NUEVO": titila al lado del título
-            bx = x + 15 + len(g.title) * CW + 6
+            bx = x + 15 + len(g.title) * CW * (2 if big else 1) + 6
             bw = len(g.badge) * CW + 4
             on = (pyxel.frame_count // 20) % 2 == 0
             pyxel.rect(bx, ty - 2, bw, 9, PINK if on else HEAD)
