@@ -334,7 +334,30 @@
       } else {
         screenEl.style.flex = "";
       }
-      window.dispatchEvent(new Event("resize"));
+      sharpCanvas();
+    }
+
+    // pyxel (sdl) dimensiona el canvas con su tamaño css, no con los píxeles
+    // reales: en un celular con 3 píxeles por punto, un juego de 320 se
+    // estiraba a 390 con escala dispareja (letras deformes) y después el
+    // navegador lo agrandaba 3x. mientras sdl lee el tamaño, el canvas dice
+    // medir sus píxeles físicos: así dibuja a resolución nativa, con píxeles
+    // parejos. los toques siguen bien porque sdl los escala con el tamaño css.
+    let sizingHD = false;
+    function sharpCanvas() {
+      const c = document.querySelector("canvas#canvas");
+      if (c && !c.mhwSharp) {
+        const rect = c.getBoundingClientRect.bind(c);
+        c.getBoundingClientRect = () => {
+          const r = rect();
+          if (!sizingHD) return r;
+          const k = Math.min(Math.max(devicePixelRatio || 1, 1), 3);
+          return new DOMRect(r.left, r.top, Math.round(r.width * k), Math.round(r.height * k));
+        };
+        c.mhwSharp = true;
+      }
+      sizingHD = true;
+      try { window.dispatchEvent(new Event("resize")); } finally { sizingHD = false; }
     }
 
     window.mhwTouch = (json) => {
@@ -392,7 +415,9 @@
     const isTouch = matchMedia("(pointer: coarse)").matches || "ontouchstart" in window
                     || new URLSearchParams(location.search).has("touch");
     if (isTouch) document.body.classList.add("touch");
-    window.addEventListener("resize", e => { if (e.isTrusted) layout(); });
+    // el resize del navegador también le llega a sdl, que vuelve al tamaño css:
+    // se rehace después, ya en alta resolución
+    window.addEventListener("resize", e => { if (e.isTrusted) setTimeout(layout, 0); });
     // el menú se arma vertical o apaisado según cómo esté el teléfono: al
     // girarlo se rearma (los juegos tienen su tamaño fijo y sólo se reacomodan)
     let wasPortrait = innerHeight > innerWidth;
