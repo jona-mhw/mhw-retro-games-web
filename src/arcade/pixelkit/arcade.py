@@ -23,7 +23,7 @@ score (int). nada de manejar ESC ni título: de eso se encarga el Cabinet.
 import pyxel
 
 from pixelkit import config, crt, scores, web
-from pixelkit.pxtext import ctext, text
+from pixelkit.pxtext import big_ctext, big_width, ctext, text
 
 TITLE, PLAY, OVER, INITIALS, ATTRACT, READY, PAUSE = range(7)
 IDLE_TO_ATTRACT = 240                       # 4 s a 60 fps
@@ -251,93 +251,167 @@ class Cabinet:
     def _blink(self, period=30):
         return (self.anim // period) % 2 == 0
 
+    # las pantallas del cabinet se arman en proporción al alto, así sirven
+    # igual en un juego apaisado (320x240) que en uno vertical (240x360). lo
+    # importante (título, puntaje, iniciales) va con el texto grande: la
+    # fuente de pyxel mide 4x6 y en el celular se lee chica.
+    def _backdrop(self, col, step=16, speed=2):
+        """diagonales que se corren lento: movimiento sin competir con el texto."""
+        off = (self.anim // speed) % step
+        for i in range(-self.h, self.w + step, step):
+            x = i + off
+            pyxel.line(x, 0, x + self.h, self.h, col)
+
+    def _frame(self, col):
+        pyxel.rect(0, 0, self.w, 3, col)
+        pyxel.rect(0, self.h - 3, self.w, 3, col)
+
+    def _panel(self, x, y, w, h, border):
+        x, y, w, h = int(x), int(y), int(w), int(h)
+        pyxel.rect(x + 3, y + 3, w, h, self.ui.shadow)
+        pyxel.rect(x, y, w, h, self.ui.bg)
+        pyxel.rectb(x, y, w, h, border)
+
+    def _title_scale(self):
+        """el título lo más grande que quepa, de 4x a 2x."""
+        for s in (4, 3):
+            if big_width(self.title, s) <= self.w - 20:
+                return s
+        return 2
+
     def _draw_title(self):
-        u, cx = self.ui, self.w / 2
+        u, cx, w, h = self.ui, self.w / 2, self.w, self.h
         pyxel.cls(u.bg)
-        pyxel.rect(0, 0, self.w, 3, u.accent)
-        pyxel.rect(0, self.h - 3, self.w, 3, u.accent)
-        ctext(cx, self.h * 0.20, spaced(self.title), u.accent)
-        ctext(cx, self.h * 0.20 + 14, self.subtitle, u.dim)
-        y = self.h * 0.44
-        for line in self.howto:
-            ctext(cx, y, line, u.text)
-            y += 10
+        self._backdrop(u.panel, speed=3)
+        self._frame(u.accent)
+        # el título, grande y con sombra honda, y un brillo que lo recorre
+        s = self._title_scale()
+        ty = int(h * 0.09)
+        big_ctext(cx + 2, ty + 2, self.title, u.shadow, s)
+        big_ctext(cx, ty, self.title, u.accent, s)
+        tw = big_width(self.title, s)
+        ly = ty + 6 * s + 3
+        pyxel.rect(cx - tw / 2, ly, tw, 1, u.dim)
+        sx = (self.anim * 2) % (tw + 60) - 30
+        pyxel.rect(cx - tw / 2 + max(0, sx), ly, max(0, min(18, tw - max(0, sx))), 1, u.text)
+        ctext(cx, ly + 7, self.subtitle, u.text)
+        # el llamado a jugar, en una píldora que titila
+        py = int(h * (0.30 if h > w else 0.33))
+        call = _t("toca para jugar", "enter para jugar")
+        pw = big_width(call, 1) + 18
+        lit = self._blink()
+        pyxel.rect(cx - pw / 2, py - 4, pw, 13, u.warn if lit else u.bg)
+        pyxel.rectb(cx - pw / 2, py - 4, pw, 13, u.warn)
+        ctext(cx, py, call, u.bg if lit else u.warn)
+        # cómo se juega, en su panel
+        bw = min(w - 20, 220)
+        lines = self.howto[:6]
+        hy = int(h * (0.41 if h > w else 0.43))
+        hh = 16 + 10 * len(lines)
+        self._panel(cx - bw / 2, hy, bw, hh, u.dim)
+        ctext(cx, hy + 5, "cómo se juega", u.accent)
+        for i, line in enumerate(lines):
+            ctext(cx, hy + 16 + i * 10, line, u.text)
+        # los récords abajo. en vertical sobra alto: los tres con número
+        # grande; apaisado, el primero grande y los otros dos en una línea
         if self.scoring:
             lst = scores.top(self.id, 3)
             if lst:
-                ctext(cx, self.h - 58, "mejores", u.dim)
-                yy = self.h - 47
-                for i, e in enumerate(lst):
-                    ctext(cx, yy, "%d  %s  %d" % (i + 1, e["ini"], e["score"]),
-                          u.accent if i == 0 else u.text)
-                    yy += 9
+                tall = h > w
+                rh = 16 + 20 * len(lst) if tall else 52
+                ry = max(hy + hh + 10, h - rh - 12)
+                self._panel(cx - bw / 2, ry, bw, rh, u.accent)
+                ctext(cx, ry + 5, "mejores", u.dim)
+                if tall:
+                    for i, e in enumerate(lst):
+                        big_ctext(cx, ry + 16 + 20 * i, "%d %s %6d" % (i + 1, e["ini"], e["score"]),
+                                  u.accent if i == 0 else u.text, 2, u.shadow)
+                else:
+                    first = lst[0]
+                    big_ctext(cx, ry + 15, "%s %d" % (first["ini"], first["score"]),
+                              u.accent, 2, u.shadow)
+                    rest = "   ".join("%d %s %d" % (i + 2, e["ini"], e["score"])
+                                      for i, e in enumerate(lst[1:]))
+                    ctext(cx, ry + 36, rest, u.text)
         else:
-            ctext(cx, self.h - 44, "recreativo", u.accent)
-        if self._blink():
-            ctext(cx, self.h * 0.36, _t("toca para jugar", "enter para jugar"), u.warn)
+            ctext(cx, h - 30, "recreativo: sin reloj ni puntaje", u.accent)
 
     def _draw_over(self):
         u, cx = self.ui, self.w / 2
-        bw, bh = min(self.w - 24, 176), 52
+        self._veil()
+        bw, bh = min(self.w - 20, 200), 92
         bx, by = int(cx - bw / 2), int(self.h / 2 - bh / 2)
-        pyxel.rect(bx + 3, by + 3, bw, bh, u.shadow)
-        pyxel.rect(bx, by, bw, bh, u.bg)
-        pyxel.rectb(bx, by, bw, bh, u.warn if self.record else u.dim)
+        self._panel(bx, by, bw, bh, u.warn if self.record else u.accent)
         if self.record:
             col = u.accent if self._blink(16) else u.warn
-            ctext(cx, by + 9, "¡NUEVO RÉCORD!", col)
+            big_ctext(cx, by + 9, "¡RÉCORD!", col, 2, u.shadow)
         else:
-            ctext(cx, by + 9, "fin de la partida", u.text)
-        ctext(cx, by + 24, "puntaje  %d" % self.last_score, u.text)
+            ctext(cx, by + 11, "fin de la partida", u.text)
+        ctext(cx, by + 30, "puntaje", u.dim)
+        score = str(self.last_score)
+        s = 3 if big_width(score, 3) <= bw - 16 else 2
+        big_ctext(cx, by + 41, score, u.text, s, u.shadow)
         if self.record:
             hint = _t("toca: tus iniciales", "enter para tus iniciales")
         else:
             hint = _t("toca para seguir", "enter para seguir")
-        ctext(cx, by + 39, hint, u.dim)
+        if self.anim >= 24:
+            ctext(cx, by + bh - 13, hint, u.accent if self._blink(20) else u.dim)
 
     def _draw_initials(self):
-        u, cx = self.ui, self.w / 2
+        u, cx, h = self.ui, self.w / 2, self.h
         pyxel.cls(u.bg)
-        pyxel.rect(0, 0, self.w, 3, u.warn)
-        pyxel.rect(0, self.h - 3, self.w, 3, u.warn)
-        ctext(cx, self.h * 0.22, spaced("RÉCORD"), u.warn)
-        ctext(cx, self.h * 0.22 + 14, "puntaje  %d" % self.last_score, u.text)
-        # las tres letras, grandes (2x), con el cursor titilando
+        self._backdrop(u.panel)
+        self._frame(u.warn)
+        big_ctext(cx, int(h * 0.16), "¡RÉCORD!", u.warn, 3, u.shadow)
+        ctext(cx, int(h * 0.16) + 26, "puntaje", u.dim)
+        big_ctext(cx, int(h * 0.16) + 36, str(self.last_score), u.text, 2, u.shadow)
+        # las tres letras, a 4x, con el cursor titilando
         s = self.initials.chars
-        gap = 26
-        x0 = cx - gap
+        gap = 30
+        y = int(h * 0.50)
         for i, ch in enumerate(s):
-            col = u.accent if i == self.initials.cur else u.text
-            if i == self.initials.cur and not self._blink(15):
-                col = u.warn
-            _big_char(int(x0 + i * gap), int(self.h * 0.48), ch, col)
-            if i == self.initials.cur:
-                pyxel.rect(int(x0 + i * gap - 4), int(self.h * 0.48 + 20), 16, 2, u.accent)
-        ctext(cx, self.h - 34, "arriba/abajo letra · izq/der mueve", u.dim)
-        ctext(cx, self.h - 24, _t("OK confirma", "enter confirma"), u.dim)
+            x = int(cx + (i - 1) * gap)
+            cur = i == self.initials.cur
+            pyxel.rect(x - 11, y - 6, 22, 36, u.panel)
+            pyxel.rectb(x - 11, y - 6, 22, 36, u.accent if cur else u.dim)
+            col = u.text
+            if cur:
+                col = u.accent if self._blink(15) else u.warn
+            big_ctext(x, y, ch, col, 4)
+            if cur:
+                pyxel.tri(x - 4, y - 10, x + 4, y - 10, x, y - 14, u.accent)
+                pyxel.tri(x - 4, y + 32, x + 4, y + 32, x, y + 36, u.accent)
+        ctext(cx, h - 34, "arriba/abajo letra · izq/der mueve", u.dim)
+        ctext(cx, h - 24, _t("OK confirma", "enter confirma"), u.text)
 
     def _draw_attract(self):
-        u, cx = self.ui, self.w / 2
+        u, cx, h = self.ui, self.w / 2, self.h
         pyxel.cls(u.bg)
-        # fondo con líneas diagonales que se mueven
-        for i in range(-self.h, self.w, 16):
-            x = i + (self.anim % 16)
-            pyxel.line(x, 0, x - self.h, self.h, u.panel)
-        ctext(cx, self.h * 0.12, spaced(self.title), u.accent)
-        ctext(cx, self.h * 0.12 + 13, "mejores puntajes", u.dim)
+        self._backdrop(u.panel, speed=1)
+        self._frame(u.accent)
+        s = self._title_scale()
+        big_ctext(cx + 2, int(h * 0.09) + 2, self.title, u.shadow, s)
+        big_ctext(cx, int(h * 0.09), self.title, u.accent, s)
+        ctext(cx, int(h * 0.09) + 6 * s + 8, "mejores puntajes", u.text)
         lst = scores.top(self.id, 5)
-        y0 = self.h * 0.34
+        y0 = int(h * 0.30)
+        step = min(26, int((h * 0.58) / 5))
         beam = (self.anim // 22) % max(1, len(lst))     # resaltador que baja
+        bw = min(self.w - 20, 200)
         for i, e in enumerate(lst):
             appear = self.anim - i * 10
             if appear < 0:
                 continue
             dx = max(0, 40 - appear * 4)                 # entra deslizando
+            y = y0 + i * step
+            if i == beam:
+                pyxel.rect(cx - bw / 2 + dx, y - 4, bw, 20, u.panel)
             col = u.warn if i == beam else (u.accent if i == 0 else u.text)
-            row = "%d   %s   %d" % (i + 1, e["ini"], e["score"])
-            ctext(cx + dx, y0 + i * 12, row, col)
+            row = "%d %s %6d" % (i + 1, e["ini"], e["score"])
+            big_ctext(cx + dx, y, row, col, 2, u.shadow)
         if self._blink(20):
-            ctext(cx, self.h - 18, _t("toca para volver", "una tecla para volver"), u.dim)
+            ctext(cx, h - 18, _t("toca para volver", "una tecla para volver"), u.dim)
 
     # --- cuenta regresiva y pausa ------------------------------------------
     def _veil(self):
@@ -405,20 +479,6 @@ def _big_text(cx, cy, s, col, scale=2, shadow=None):
                     if shadow is not None:
                         pyxel.rect(px + 1, py + 1, scale, scale, shadow)
                     pyxel.rect(px, py, scale, scale, col)
-
-
-def _big_char(x, y, ch, col):
-    """dibuja un carácter de la fuente de pyxel al doble, para las iniciales."""
-    # se dibuja chico en una zona fuera de pantalla y se relee no es viable;
-    # en su lugar, se dibuja el glifo normal escalado con rectángulos leyendo
-    # cada píxel via un pyxel.Image temporal.
-    img = _glyph_image()
-    img.cls(0)
-    img.text(0, 0, ch, 7)
-    for gy in range(6):
-        for gx in range(4):
-            if img.pget(gx, gy) == 7:
-                pyxel.rect(x + gx * 2, y + gy * 2, 2, 2, col)
 
 
 _GLYPH = None

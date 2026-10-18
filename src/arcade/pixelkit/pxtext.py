@@ -125,5 +125,6 @@ def big_width(s, scale=2):
 
 
 def big_ctext(cx, y, s, col, scale=2, shadow=None):
-    """big_text centrado en cx."""
-    big_text(int(cx - len(s) * CW * scale / 2), y, s, col, scale, shadow)
+    """big_text centrado en cx. cada carácter lleva su columna de aire a la
+    derecha: se descuenta para que lo visible quede al medio."""
+    big_text(int(cx - (len(s) * CW - 1) * scale / 2), y, s, col, scale, shadow)
