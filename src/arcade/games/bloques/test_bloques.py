@@ -569,8 +569,44 @@ def test_los_gestos_del_dedo():
             dedo.frame(w, 40, 60 + k * 3, True)       # arrastre lento hacia abajo
         dedo.frame(w, 40, 69, False)
         chk(t.shape == forma, "un arrastre no se confunde con un toque")
+        # el cuadro de GUARDA también se toca
+        t.hard_drop()
+        actual = t.pk
+        x, y, ww, hh = G.HOLD_BOX
+        dedo.frame(w, x + ww // 2, y + hh // 2, True)
+        dedo.frame(w, x + ww // 2, y + hh // 2, False)
+        chk(t.hold == actual, "tocar el cuadro de guardar guarda la pieza")
+        # y el arrastre vale en todo el tablero grande, también abajo
+        x0 = t.px
+        dedo.frame(w, G.BX + 20, G.BY + G.BH - 30, True)
+        for k in range(1, 4):
+            dedo.frame(w, G.BX + 20 + k * G.PASO_X, G.BY + G.BH - 30, True)
+        dedo.frame(w, G.BX + 20 + 3 * G.PASO_X, G.BY + G.BH - 30, False)
+        chk(t.px == x0 + 3, "arrastrar abajo del tablero también mueve (%d)"
+            % (t.px - x0))
     finally:
         dedo.quitar()
+
+
+def test_la_pantalla_es_vertical():
+    """el juego se diseñó para el celular parado: ancho 216-256 y alto entre
+    1,45 y 1,6 veces el ancho, y el game.toml dice lo mismo (la página reparte
+    la pantalla con eso)."""
+    import os
+    chk(216 <= G.W <= 256, "ancho %d entre 216 y 256" % G.W)
+    chk(1.45 <= G.H / G.W <= 1.6, "proporción %.2f entre 1,45 y 1,6" % (G.H / G.W))
+    toml = open(os.path.join(os.path.dirname(G.__file__), "game.toml")).read()
+    chk("width    = %d" % G.W in toml and "height   = %d" % G.H in toml,
+        "el game.toml tiene el tamaño nuevo")
+    chk(G.BX >= 0 and G.BX + G.BW <= G.W and G.BY + G.BH <= G.H,
+        "el tablero entra en la pantalla")
+    chk(G.BY > G.HUD_H, "y queda bajo la franja del reloj")
+    for nombre in ("HOLD_BOX", "ITEM_BOX", "NEXT_BOX", "BASURA_BOX"):
+        x, y, w, h = getattr(G, nombre)
+        chk(0 <= x and x + w <= G.W and y + h <= G.H, "%s entra" % nombre)
+        chk(x + w <= G.BX - 3 or x >= G.BX + G.BW + 3,
+            "%s no se mete en el tablero" % nombre)
+    chk(G.CELL >= 14, "las celdas son grandes (%d px)" % G.CELL)
 
 
 if __name__ == "__main__":
@@ -599,7 +635,7 @@ if __name__ == "__main__":
                test_el_oro_se_guarda_con_la_pieza,
                test_el_lock_delay_da_un_respiro, test_bajar_a_mano,
                test_el_que_estira_el_lock_no_estira_la_partida,
-               test_los_gestos_del_dedo):
+               test_los_gestos_del_dedo, test_la_pantalla_es_vertical):
         fn()
     print()
     print("=== TODO OK ===" if not FALLAS else "=== %d FALLAS ===" % len(FALLAS))

@@ -563,6 +563,39 @@ def test_el_frenesi_no_estira_la_partida():
     chk(frames <= DOS_MIN, "y en menos de dos minutos (%d)" % frames)
 
 
+def test_la_pantalla_es_vertical():
+    """el juego se diseñó para el celular parado: ancho 216-256 y alto entre
+    1,45 y 1,6 veces el ancho, y el game.toml dice lo mismo (la página reparte
+    la pantalla con eso)."""
+    import os
+    from games.culebra import game as G
+    chk(216 <= G.W <= 256, "ancho %d entre 216 y 256" % G.W)
+    chk(1.45 <= G.H / G.W <= 1.6, "proporción %.2f entre 1,45 y 1,6" % (G.H / G.W))
+    toml = open(os.path.join(os.path.dirname(G.__file__), "game.toml")).read()
+    chk("width    = %d" % G.W in toml and "height   = %d" % G.H in toml,
+        "el game.toml tiene el tamaño nuevo")
+    chk(G.ROWS > G.COLS, "el campo es más alto que ancho (%dx%d)" % (G.COLS, G.ROWS))
+    chk(G.FY + G.FH + G.BORDE == G.H and G.FX + G.FW + G.BORDE == G.W,
+        "el campo y su borde llenan la pantalla bajo el HUD")
+    chk(G.CELL >= 12, "las celdas son grandes (%d px)" % G.CELL)
+    g = Culebra(rng=random.Random(1))
+    chk(g.cols == G.COLS and g.rows == G.ROWS, "la lógica usa el campo nuevo")
+
+
+def test_los_sprites_miden_una_celda():
+    """los sprites escritos a mano: todas las filas del mismo largo y del
+    tamaño de una celda (si no, el horneado los corre o los corta)."""
+    from games.culebra import game as G
+    for nombre in ("APPLE_S", "AJI_S", "MOUSE_S", "MOUSE_S2"):
+        spr = getattr(G, nombre)
+        chk(len(spr) == G.CELL and all(len(r) == G.CELL for r in spr),
+            "%s mide %dx%d" % (nombre, G.CELL, G.CELL))
+    for nombre in ("GHOST_S", "TIJERA_S"):
+        spr = getattr(G, nombre)
+        chk(len({len(r) for r in spr}) == 1 and len(spr) == len(spr[0]),
+            "%s es cuadrado" % nombre)
+
+
 if __name__ == "__main__":
     for fn in (test_inicio, test_mueve, test_no_reversa, test_come,
                test_muere_pared, test_muere_mordida, test_acelera,
@@ -584,7 +617,8 @@ if __name__ == "__main__":
                test_las_aranas_matan_y_se_esquivan,
                test_las_aranas_no_se_te_meten_encima, test_el_frenesi_final,
                test_nada_nace_encima_de_nada,
-               test_el_frenesi_no_estira_la_partida):
+               test_el_frenesi_no_estira_la_partida,
+               test_la_pantalla_es_vertical, test_los_sprites_miden_una_celda):
         fn()
     print()
     print("=== TODO OK ===" if not FALLAS else "=== %d FALLAS ===" % len(FALLAS))

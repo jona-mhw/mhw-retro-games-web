@@ -22,7 +22,8 @@ lo de siempre: comes, creces, aceleras y no te muerdes. lo que le agregamos:
 - **racha**: comer poco después de la comida anterior la encadena. cada tres
   seguidas la manzana vale una más (hasta x3). dejar pasar el tiempo la enfría.
 - **el ají**: vale por tres y te mete turbo cuatro segundos.
-- **escenarios**: cada nivel cambia el tablero (pradera, desierto, cueva...).
+- **escenarios**: cada nivel cambia el tablero (pradera, desierto, cueva...),
+  cada uno con su piso, su borde y su decoración.
 
 el nivel sale de cuánto comiste (no del puntaje): si saliera del puntaje, el
 frenesí x2 dispararía niveles, muros y velocidad justo en el final.
@@ -31,6 +32,12 @@ los giros van **en cola** (hasta tres): si deslizas dos veces rápido dentro del
 mismo paso, se hacen los dos giros, uno por paso. antes el segundo pisaba al
 primero y, si era el contrario del rumbo, se perdía — en el celular, con swipe,
 eso era morir en una esquina por un giro que sí hiciste.
+
+la pantalla es vertical (252x368) para el celular parado: un campo de 20x26
+celdas de 12 px (en el teléfono, ~18 px de pantalla cada una), con el HUD
+arriba en números grandes. los escenarios se hornean una vez en imágenes (piso,
+borde, decoración y viñeta) y las frutas y bichos son sprites horneados: un
+frame es un blt de fondo, un blt por cosa y la culebra con sus capas.
 
 toda la mecánica vive en la clase Culebra, sin pyxel: `frame()` avanza un frame
 y devuelve qué pasó. World la juega y la dibuja; el Cabinet le pone título,
@@ -43,12 +50,15 @@ import pyxel
 
 from pixelkit import fx
 from pixelkit.arcade import Cabinet, UIColors
-from pixelkit.pxtext import text
+from pixelkit.pxtext import big_ctext, big_text, big_width, text
 
-CELL = 8
-COLS, ROWS = 32, 26
-HUD = 16
-W, H = COLS * CELL, HUD + ROWS * CELL   # 256 x 224
+CELL = 12
+COLS, ROWS = 20, 26
+HUD = 44
+BORDE = 6
+FX, FY = BORDE, HUD + BORDE                # la esquina del campo
+FW, FH = COLS * CELL, ROWS * CELL          # 240 x 312
+W, H = FW + 2 * BORDE, HUD + FH + 2 * BORDE  # 252 x 368
 
 HAMBRE = 30 * 60                 # con lo que arrancas
 EXTRA_MAX = 60 * 60              # y lo máximo que te pueden devolver las frutas
@@ -102,41 +112,101 @@ ARANA_VALE = 5                   # comida con el fantasma
 FRENESI_X = 2
 BAYAS = 4
 
-(BG, GRID, FRAME, BODY0, BODY1, HEAD, APPLE, APPLE2, TXT, DIM, TEAL,
- AMBER, SHADOW, GREEN, RED, WHITE,
- GOLD, GOLD2, GHOST1, GHOST2, WALL, WALL2, MAGENTA, ORANGE,
- SPIDER, SPIDER2, MOUSE, MOUSE2, BERRY, BERRY2, LABEL, DARKRED,
- BELLY, PANEL) = range(34)
-PAL = [
-    0x0C0E14, 0x141926, 0x2A3350, 0x4B7A18, 0x8AC52F, 0xB6F03C, 0xE0402A,
-    0xFF7A54, 0xE8ECF5, 0x5A6480, 0x27969E, 0xFFC24A, 0x070810, 0x8AC52F,
-    0xE0402A, 0xF2F5FB,
-    0xFFD24A, 0xFFF3B0, 0x7ADCFF, 0x2E7FBF, 0x6E6A82, 0x39435E, 0xD84AB8,
-    0xE0842E,
-    0x9A4FE0, 0xD4A8FF, 0xC8C2D8, 0xFF9AB8, 0x5A6CFF, 0xB0B8FF, 0xB4BED8,
-    0x6E1E2C, 0xD8F08A, 0x111522,
-]
+# --- paleta --------------------------------------------------------------
+# rampas de 4-5 tonos por cosa (contorno, sombra, medio, luz, brillo): con eso
+# la culebra, las frutas y los muros se pintan con volumen — luz arriba a la
+# izquierda, sombra abajo a la derecha — y se despegan del piso.
+PAL = []
 
-# un escenario por nivel: (nombre, cuadro A, cuadro B, muro, muro sombra).
-# cambiar de lugar al subir de nivel es lo que hace que se sienta un avance.
-ESCENAS_RGB = [
-    ("PRADERA", 0x0B130B, 0x111D10, 0x6E7A5A, 0x3A4630),
-    ("DESIERTO", 0x16100A, 0x21180C, 0x9A7A46, 0x5A4426),
-    ("CUEVA", 0x0F0A17, 0x191124, 0x6A5A8E, 0x3A2E54),
-    ("GLACIAR", 0x09111A, 0x0F1B28, 0x7AA6C4, 0x3E5E78),
-    ("VOLCÁN", 0x160908, 0x240F0B, 0x9A4632, 0x52221A),
-    ("NOCHE", 0x0C0E14, 0x141926, 0x6E6A82, 0x39435E),
+
+def _c(*rgb):
+    i = len(PAL)
+    PAL.extend(rgb)
+    return i if len(rgb) == 1 else tuple(range(i, i + len(rgb)))
+
+
+BG = _c(0x0A0C14)
+GRID = _c(0x161C2C)              # fondo de barras
+FRAME = _c(0x2C3656)
+FRAME2 = _c(0x48557E)
+PANEL = _c(0x10162A)
+PANEL2 = _c(0x1A2240)
+TXT = _c(0xE8ECF5)
+DIM = _c(0x5A6480)
+LABEL = _c(0x9AA6C8)
+SHADOW = _c(0x04050A)
+WHITE = _c(0xF6F8FF)
+TEAL = _c(0x27969E)
+AMBER = _c(0xFFC24A)
+GREEN = _c(0x8AC52F)
+RED = _c(0xE8383A)
+DARKRED = _c(0x561424)
+MAGENTA = _c(0xD84AB8)
+ORANGE = _c(0xF0882E)
+
+# la culebra: contorno, sombra, medio, cuerpo, luz, brillo, panza
+SNAKE = _c(0x0C2606, 0x2A5410, 0x45821A, 0x6CB42A, 0xA6E24A, 0xE2FFA0)
+S_O, S_S, S_M, S_C, S_L, S_H = SNAKE
+BELLY = _c(0xD8F08A)
+HEAD = _c(0x8ED636)
+GHOSTR = _c(0x0E2A5E, 0x2E6FB0, 0x5AAEE6, 0x9AE0FF, 0xE6FAFF)
+TURBOR = _c(0x4A1006, 0xA83416, 0xE0602A, 0xFFA04A, 0xFFE0A8)
+HAMBRER = _c(0x4A0A10, 0x9A1C22, 0xD83434, 0xFF7A6A, 0xFFD8D0)
+GHOST1, GHOST2 = GHOSTR[3], GHOSTR[1]
+
+APPLER = _c(0x3A0608, 0x8E1A16, 0xD8382A, 0xFF7A5A, 0xFFE0D0)
+APPLE, APPLE2 = APPLER[2], APPLER[3]
+LEAF = _c(0x1E5A14, 0x48A02A, 0x8AD84A)
+STEM = _c(0x5A3A1A)
+GOLDR = _c(0x5A3A00, 0xB07A08, 0xFFC21A, 0xFFE47A, 0xFFFBE0)
+GOLD, GOLD2 = GOLDR[2], GOLDR[3]
+BERRYR = _c(0x14104A, 0x2E36B0, 0x5A6CFF, 0xB0B8FF, 0xF0F2FF)
+BERRY, BERRY2 = BERRYR[2], BERRYR[3]
+MOUSER = _c(0x2A2636, 0x6E6880, 0xA8A2B8, 0xDCD8E8, 0xFF9AB8)
+MOUSE, MOUSE2 = MOUSER[2], MOUSER[4]
+SPIDERR = _c(0x12081E, 0x6A3AB0, 0x8E4EDA, 0xC89AF8, 0xFF3A4A)
+SPIDER, SPIDER2 = SPIDERR[2], SPIDERR[3]
+CHILIR = _c(0x40080A, 0x9A1A16, 0xE8382A, 0xFF8A6A)
+
+# un escenario por nivel: nombre y sus colores. el piso va oscuro y con poco
+# contraste (la textura y la decoración se sienten, pero no compiten con las
+# frutas); el borde y los muros sí tienen volumen.
+#   piso: hondo, base, alterno, mota  · deco: tres tonos
+#   borde/muro: contorno, sombra, medio, luz
+ESCENAS_DEF = [
+    ("PRADERA", "pasto",
+     (0x0A1508, 0x0E1C0C, 0x11210E, 0x1A3014), (0x2A4A1C, 0x6A6898, 0xA8A8C8),
+     (0x0A1406, 0x22441A, 0x3A6A26, 0x6A9A44)),
+    ("DESIERTO", "arena",
+     (0x150E06, 0x1C1409, 0x21180C, 0x2C2112), (0x3A2C16, 0x2E4A22, 0x5A4A30),
+     (0x24160A, 0x6A4A22, 0x9A7A46, 0xD2B07A)),
+    ("CUEVA", "piedra",
+     (0x0A0612, 0x110B1C, 0x150E22, 0x1E1630), (0x2A2040, 0x3AA6B8, 0x8A7AE0),
+     (0x08060E, 0x2E2446, 0x4C3E6E, 0x7A6AA0)),
+    ("GLACIAR", "hielo",
+     (0x081220, 0x0C1828, 0x0F1E30, 0x16283C), (0x22405A, 0x5A8AB0, 0x9AC4E0),
+     (0x0A1A2C, 0x3E6E92, 0x7AA8C8, 0xCAEAFA)),
+    ("VOLCÁN", "lava",
+     (0x120606, 0x190A08, 0x1F0D0A, 0x2A1410), (0x5A1608, 0xC8481A, 0x3A2420),
+     (0x100605, 0x3A1C16, 0x5E3024, 0xA04A30)),
+    ("NOCHE", "baldosa",
+     (0x080A10, 0x0C0E18, 0x10131E, 0x171B2A), (0x1E2A20, 0x3A4060, 0xD8F08A),
+     (0x07080D, 0x2A2E40, 0x484E68, 0x7C7E98)),
 ]
 ESCENAS = []
-for _n, _a, _b, _m, _m2 in ESCENAS_RGB:
-    i = len(PAL)
-    PAL += [_a, _b, _m, _m2]
-    ESCENAS.append((_n, i, i + 1, i + 2, i + 3))
-FRENESI_A, FRENESI_B = len(PAL), len(PAL) + 1
-PAL += [0x1A0A1C, 0x2A1030]
+for _n, _k, _piso, _deco, _muro in ESCENAS_DEF:
+    ESCENAS.append((_n, _k, _c(*_piso), _c(*_deco), _c(*_muro)))
+# en la pradera el borde es un seto, pero los muros son piedras con musgo: si
+# fueran verdes se confundirían con la culebra
+MURO_PRADERA = _c(0x1A1C16, 0x464C3C, 0x6A7258, 0x9AA482)
+FRENESI_PISO = (_c(0x12051A, 0x1A0924, 0x1F0B2B, 0x2E1240),
+                _c(0x12051A, 0x1F0B2B, 0x1A0924, 0x3A1650))
+FRENESI_DECO = _c(0x5A1E6A, 0xD84AB8, 0xFF9AE0)
+FRENESI_BORDE = _c(0x1A0620, 0x5A1A6A, 0xA83AB8, 0xFF8AE8)
+KEY = 255                        # el transparente de los sprites
 PAL += [0] * (256 - len(PAL))
 
-CHISPA_MANZANA = (WHITE, APPLE2, APPLE, BODY0)
+CHISPA_MANZANA = (WHITE, APPLE2, APPLE, S_M)
 CHISPA_DORADA = (WHITE, GOLD2, GOLD, AMBER)
 CHISPA_PODER = (WHITE, GHOST1, GHOST2, TEAL)
 DIRS = ((1, 0), (-1, 0), (0, 1), (0, -1))
@@ -610,43 +680,356 @@ class Culebra:
         return max(2, base - 3) if self.turbo else base
 
 
-# --- texto grande ------------------------------------------------------------
-# la fuente de pyxel es de 4x6: a 1.5x en el teléfono un "¡RACHA!" de ese
-# tamaño no se ve. se dibuja en una imagen aparte (con tildes, ñ y ¡) y se
-# estampa escalada con blt.
-_ACUTE = {"á": "a", "é": "e", "í": "i", "ó": "o", "ú": "u",
-          "Á": "A", "É": "E", "Í": "I", "Ó": "O", "Ú": "U"}
-_IMG = None
+# --- el arte horneado ----------------------------------------------------------
+# los sprites (frutas, bichos, íconos) están escritos como texto, una letra por
+# píxel, y se hornean una vez en una hoja. los escenarios (piso con textura,
+# borde, decoración y viñeta) también se hornean una vez cada uno: dibujar el
+# fondo de un frame es un solo blt.
+APPLE_S = [
+    "......bG....",
+    "......bhgG..",
+    "...kkkbkkk..",
+    "..kllmmmmmk.",
+    ".klwwlmmmmdk",
+    ".klwlmmmmmdk",
+    ".kllmmmmmmdk",
+    ".kmmmmmmmddk",
+    ".kmmmmmmmddk",
+    "..kmmmmmddk.",
+    "..kdddddddk.",
+    "...kkk.kkk..",
+]
+AJI_S = [
+    "..Gg........",
+    ".GggG.......",
+    "..kGkk......",
+    "..kmlwk.....",
+    "..kmllmk....",
+    "...kmmlmk...",
+    "....kmmmmk..",
+    ".....kmmmdk.",
+    "......kmmdk.",
+    ".......kmdk.",
+    "........kdk.",
+    ".........k..",
+]
+MOUSE_S = [
+    "........kk..",
+    ".......kppk.",
+    "...kkkkkkpk.",
+    "..kllllllkk.",
+    ".kllmmmmmlk.",
+    ".klmmmmmmlek",
+    "kllmmmmmmmmp",
+    "kdmmmmmmmmk.",
+    ".kdmmmmmddk.",
+    "..kddddddk..",
+    "...k...k....",
+    "............",
+]
+MOUSE_S2 = MOUSE_S[:10] + ["....k...k...", "............"]
+BAYA6 = [".kkkk.", "kwlmmk", "klmmmk", "kmmmdk", "kmmddk", ".kkkk."]
+GHOST_S = [
+    "...kkkk...",
+    "..kllllk..",
+    ".kllllllk.",
+    ".klkllkmk.",
+    ".klkllkmk.",
+    ".kllllmmk.",
+    ".klmmmmdk.",
+    ".kmmmmmdk.",
+    ".kmkmmkdk.",
+    ".kk.kk.kk.",
+]
+TIJERA_S = [
+    "l.......l.",
+    "kl.....lk.",
+    ".kl...lk..",
+    "..kl.lk...",
+    "...klk....",
+    "...rkr....",
+    "..rr.rr...",
+    ".r..r..r..",
+    ".r..r..r..",
+    "..rr.rr...",
+]
+C = CELL
+SP = {"apple": 0, "gold": C, "aji": 2 * C, "mouse": 3 * C, "mouse2": 4 * C,
+      "baya": 5 * C, "ghost": 6 * C, "tijera": 6 * C + 10}
+MURO_V = C                                    # fila de los muros, uno por escena
+
+_SHEET = None
+_ESCENAS_IMG = {}
 
 
-def big(cx, cy, s, col, scale=2, sombra=SHADOW):
-    """texto centrado en (cx, cy), agrandado `scale` veces, con sombra."""
-    global _IMG
-    if _IMG is None:
-        _IMG = pyxel.Image(256, 10)
-    img = _IMG
-    base = "".join(" " if ch == "¡" else ("n" if ch == "ñ" else
-                   ("N" if ch == "Ñ" else _ACUTE.get(ch, ch))) for ch in s)
-    w = len(s) * 4
-    for c, off in ((sombra, max(1, int(scale))), (col, 0)):
-        if c is None:
-            continue
-        img.rect(0, 0, 256, 10, 0)
-        img.text(0, 3, base, c)
-        for i, ch in enumerate(s):
-            x = i * 4
-            if ch in _ACUTE:
-                img.pset(x + 2, 0, c)
-                img.pset(x + 1, 1, c)
-            elif ch in "ñÑ":
-                img.pset(x, 1, c)
-                img.pset(x + 1, 0, c)
-                img.pset(x + 2, 1, c)
-            elif ch == "¡":
-                img.pset(x + 1, 3, c)
-                img.rect(x + 1, 5, 1, 3, c)
-        pyxel.blt(int(cx - w / 2) + off, int(cy - 5) + off, img, 0, 0, w, 10,
-                  0, None, scale)
+def _stamp(img, u, v, rows, cmap):
+    for y, row in enumerate(rows):
+        for x, ch in enumerate(row):
+            c = cmap.get(ch)
+            if c is not None:
+                img.pset(u + x, v + y, c)
+
+
+def _muro(img, u, v, kind, r):
+    """un bloque de muro con volumen: tapa clara arriba, cara, sombra."""
+    o, s, m, l = r
+    img.rect(u, v, C, C, o)
+    img.rect(u + 1, v + 1, C - 2, C - 2, m)
+    img.rect(u + 1, v + 1, C - 2, 3, l)
+    img.rect(u + 1, v + C - 3, C - 2, 2, s)
+    img.rect(u + C - 2, v + 4, 1, C - 7, s)
+    img.pset(u + 1, v + 1, WHITE if kind == "hielo" else l)
+    if kind in ("arena", "baldosa"):         # ladrillos
+        img.rect(u + 1, v + 6, C - 2, 1, s)
+        img.rect(u + 5, v + 4, 1, 2, s)
+        img.rect(u + 3, v + 7, 1, 2, s)
+        img.rect(u + 8, v + 7, 1, 2, s)
+    elif kind == "hielo":                    # brillo de hielo
+        img.line(u + 2, v + 8, u + 6, v + 4, l)
+        img.line(u + 5, v + 8, u + 8, v + 5, l)
+    elif kind == "lava":                     # basalto con una grieta encendida
+        img.line(u + 3, v + 4, u + 5, v + 6, CHILIR[2])
+        img.line(u + 5, v + 6, u + 8, v + 7, CHILIR[2])
+        img.pset(u + 5, v + 6, AMBER)
+    else:                                    # piedra: motas
+        img.pset(u + 3, v + 6, s)
+        img.pset(u + 7, v + 7, l)
+        img.pset(u + 6, v + 5, s)
+        img.pset(u + 4, v + 8, s)
+
+
+def sheet():
+    global _SHEET
+    if _SHEET is None:
+        img = pyxel.Image(128, 2 * C)
+        img.cls(KEY)
+        ar = APPLER
+        _stamp(img, SP["apple"], 0, APPLE_S,
+               {"k": ar[0], "d": ar[1], "m": ar[2], "l": ar[3], "w": ar[4],
+                "g": LEAF[1], "G": LEAF[0], "h": LEAF[2], "b": STEM})
+        gr = GOLDR
+        _stamp(img, SP["gold"], 0, APPLE_S,
+               {"k": gr[0], "d": gr[1], "m": gr[2], "l": gr[3], "w": gr[4],
+                "g": gr[3], "G": gr[1], "h": gr[4], "b": gr[1]})
+        cr = CHILIR
+        _stamp(img, SP["aji"], 0, AJI_S,
+               {"k": cr[0], "d": cr[1], "m": cr[2], "l": cr[3], "w": WHITE,
+                "g": LEAF[1], "G": LEAF[0]})
+        mr = MOUSER
+        mm = {"k": mr[0], "d": mr[1], "m": mr[2], "l": mr[3], "p": mr[4],
+              "e": SHADOW}
+        _stamp(img, SP["mouse"], 0, MOUSE_S, mm)
+        _stamp(img, SP["mouse2"], 0, MOUSE_S2, mm)
+        br = BERRYR
+        bm = {"k": br[0], "d": br[1], "m": br[2], "l": br[3], "w": br[4]}
+        for ox, oy in ((0, 1), (6, 2), (3, 6)):
+            _stamp(img, SP["baya"] + ox, oy, BAYA6, bm)
+        img.pset(SP["baya"] + 5, 0, LEAF[2])
+        img.pset(SP["baya"] + 6, 0, LEAF[1])
+        gh = GHOSTR
+        _stamp(img, SP["ghost"], 0, GHOST_S,
+               {"k": gh[0], "d": gh[1], "m": gh[3], "l": gh[4]})
+        _stamp(img, SP["tijera"], 0, TIJERA_S,
+               {"k": MOUSER[1], "l": MOUSER[3], "r": MAGENTA})
+        for i, (_, kind, _, _, muro) in enumerate(ESCENAS):
+            _muro(img, i * C, MURO_V, "piedra" if i == 0 else kind,
+                  MURO_PRADERA if i == 0 else muro)
+        _SHEET = img
+    return _SHEET
+
+
+def _ladrillos(img, x, y, w, h, bw, bh, mortero, luz):
+    """ladrillos trabados en el rectángulo (para los bordes de piedra)."""
+    for k, yy in enumerate(range(y, y + h, bh)):
+        img.rect(x, yy, w, 1, mortero)
+        if luz is not None:
+            img.rect(x, yy + 1, w, 1, luz)
+        off = (bw // 2) * (k % 2)
+        for xx in range(x - off, x + w, bw):
+            if x <= xx < x + w:
+                img.rect(xx, yy, 1, bh, mortero)
+
+
+def _borde(img, kind, r, rng):
+    """el marco del campo, con la textura del escenario."""
+    o, s, m, l = r
+    w, h = W, H - HUD
+    img.rect(0, 0, w, h, m)
+    zonas = ((0, 0, w, BORDE), (0, h - BORDE, w, BORDE),
+             (0, 0, BORDE, h), (w - BORDE, 0, BORDE, h))
+    if kind == "pasto":                      # un seto: hojas en dos tonos
+        for zx, zy, zw, zh in zonas:
+            for _ in range(zw * zh // 3):
+                img.pset(zx + rng.randrange(zw), zy + rng.randrange(zh),
+                         l if rng.random() < 0.4 else s)
+    elif kind in ("arena", "baldosa"):
+        for zx, zy, zw, zh in zonas:
+            _ladrillos(img, zx, zy, zw, zh, 10 if kind == "arena" else 8, 3, s, None)
+    elif kind == "hielo":
+        for zx, zy, zw, zh in zonas:
+            _ladrillos(img, zx, zy, zw, zh, 14, 6, s, l)
+            for _ in range(zw * zh // 40):
+                img.pset(zx + rng.randrange(zw), zy + rng.randrange(zh), WHITE)
+    else:                                    # roca (cueva, volcán, frenesí)
+        for zx, zy, zw, zh in zonas:
+            for _ in range(zw * zh // 14):
+                cx, cy = zx + rng.randrange(zw), zy + rng.randrange(zh)
+                img.rect(cx, cy, 2, 2, s if rng.random() < 0.6 else l)
+            if kind == "lava":
+                for _ in range(zw * zh // 90):
+                    cx, cy = zx + rng.randrange(zw), zy + rng.randrange(zh)
+                    img.line(cx, cy, cx + rng.randrange(-3, 4), cy + rng.randrange(-3, 4),
+                             CHILIR[2])
+    # el filo: luz arriba-izquierda, sombra abajo-derecha, contorno afuera y
+    # adentro (el campo queda hundido)
+    img.rect(0, 0, w, 1, l)
+    img.rect(0, 0, 1, h, l)
+    img.rect(0, h - 1, w, 1, o)
+    img.rect(w - 1, 0, 1, h, o)
+    img.rectb(BORDE - 1, BORDE - 1, FW + 2, FH + 2, o)
+
+
+def _decorar(img, kind, deco, piso, rng):
+    """la decoración del piso: tenue, nunca del color de una fruta."""
+    d1, d2, d3 = deco
+    hondo, base, alt, mota = piso
+
+    def celda():
+        return (BORDE + rng.randrange(COLS) * CELL + rng.randrange(4),
+                BORDE + rng.randrange(ROWS) * CELL + rng.randrange(4))
+
+    if kind == "pasto":
+        for _ in range(70):                  # matas de pasto
+            x, y = celda()
+            for dx, dy in ((0, 2), (1, 1), (2, 3), (3, 0), (4, 2), (5, 1)):
+                if rng.random() < 0.8:
+                    img.pset(x + dx, y + dy + 3, d1)
+        for _ in range(18):                  # florcitas lila con centro claro
+            x, y = celda()
+            x, y = x + 3, y + 3
+            for dx, dy in ((0, -1), (-1, 0), (1, 0), (0, 1)):
+                img.pset(x + dx, y + dy, d2)
+            img.pset(x, y, d3)
+    elif kind == "arena":
+        for _ in range(60):                  # ondas de la arena
+            x, y = celda()
+            for k in range(8):
+                img.pset(x + k, y + 4 + (1 if k in (2, 3, 4) else 0), mota)
+        for _ in range(7):                   # cactus chicos
+            x, y = celda()
+            img.rect(x + 4, y + 1, 2, 7, d2)
+            img.rect(x + 2, y + 3, 1, 3, d2)
+            img.rect(x + 2, y + 5, 2, 1, d2)
+            img.rect(x + 7, y + 2, 1, 3, d2)
+            img.rect(x + 6, y + 4, 1, 1, d2)
+        for _ in range(26):                  # piedritas
+            x, y = celda()
+            img.rect(x + 3, y + 5, 2, 1, d3)
+            img.pset(x + 3, y + 4, mota)
+    elif kind == "piedra":
+        for _ in range(40):                  # piedras del piso
+            x, y = celda()
+            img.elli(x + 1, y + 3, 6, 4, d1)
+            img.pset(x + 2, y + 3, mota)
+        for _ in range(12):                  # cristales que brillan apenas
+            x, y = celda()
+            c = d2 if rng.random() < 0.5 else d3
+            img.line(x + 4, y + 1, x + 4, y + 7, c)
+            img.line(x + 3, y + 3, x + 3, y + 6, c)
+            img.pset(x + 5, y + 4, c)
+            img.pset(x + 4, y + 1, WHITE)
+    elif kind == "hielo":
+        for _ in range(26):                  # grietas
+            x, y = celda()
+            for _k in range(10):
+                nx, ny = x + rng.randrange(-1, 3), y + rng.randrange(-1, 3)
+                img.line(x, y, nx, ny, d1)
+                x, y = nx, ny
+        for _ in range(110):                 # escarcha
+            x, y = celda()
+            img.pset(x + rng.randrange(8), y + rng.randrange(8), d2)
+        for _ in range(10):
+            x, y = celda()
+            img.pset(x + 4, y + 4, d3)
+            img.pset(x + 3, y + 4, d2)
+            img.pset(x + 5, y + 4, d2)
+            img.pset(x + 4, y + 3, d2)
+            img.pset(x + 4, y + 5, d2)
+    elif kind == "lava":
+        for _ in range(18):                  # grietas con brasa adentro
+            x, y = celda()
+            pts = [(x, y)]
+            for _k in range(9):
+                x, y = x + rng.randrange(-1, 3), y + rng.randrange(-1, 3)
+                pts.append((x, y))
+            for (ax, ay), (bx, by) in zip(pts, pts[1:]):
+                img.line(ax, ay, bx, by, d1)
+            for ax, ay in pts[2:-2:2]:
+                img.pset(ax, ay, d2)
+        for _ in range(26):                  # rocas de ceniza
+            x, y = celda()
+            img.elli(x + 2, y + 3, 5, 3, d3)
+            img.pset(x + 3, y + 3, mota)
+    elif kind == "baldosa":
+        for y in range(0, ROWS, 2):          # un patio de baldosas grandes
+            for x in range((y // 2) % 2, COLS, 2):
+                img.rectb(BORDE + x * CELL, BORDE + y * CELL, 2 * CELL, 2 * CELL, hondo)
+        for _ in range(60):                  # musgo entre las baldosas
+            x, y = celda()
+            img.pset(x, y, d1)
+            img.pset(x + 1, y, d1)
+    else:                                    # frenesí: destellitos
+        for _ in range(40):
+            x, y = celda()
+            x, y = x + 4, y + 4
+            img.pset(x, y, d2)
+            img.pset(x - 1, y, d1)
+            img.pset(x + 1, y, d1)
+            img.pset(x, y - 1, d1)
+            img.pset(x, y + 1, d1)
+
+
+def _hornear(kind, piso, deco, borde, seed):
+    hondo, base, alt, mota = piso
+    rng = random.Random(seed * 7919 + 13)
+    img = pyxel.Image(W, H - HUD)
+    _borde(img, kind, borde, rng)
+    img.rect(BORDE, BORDE, FW, FH, base)
+    for y in range(ROWS):                     # el damero, apenas
+        for x in range(y & 1, COLS, 2):
+            img.rect(BORDE + x * CELL, BORDE + y * CELL, CELL, CELL, alt)
+    for _ in range(900):                      # motas: el piso tiene grano
+        img.pset(BORDE + rng.randrange(FW), BORDE + rng.randrange(FH),
+                 mota if rng.random() < 0.6 else hondo)
+    _decorar(img, kind, deco, piso, rng)
+    # viñeta: el piso se oscurece hacia las orillas, y la sombra del borde cae
+    # adentro arriba y a la izquierda (el campo está hundido)
+    for k, a in enumerate((0.5, 0.25, 0.125)):
+        img.dither(a)
+        for j in range(3):
+            d = k * 3 + j
+            img.rectb(BORDE + d, BORDE + d, FW - 2 * d, FH - 2 * d, hondo)
+    img.dither(0.5)
+    img.rect(BORDE, BORDE, FW, 3, SHADOW)
+    img.rect(BORDE, BORDE, 3, FH, SHADOW)
+    img.dither(1.0)
+    img.rect(BORDE, BORDE, FW, 1, SHADOW)
+    img.rect(BORDE, BORDE, 1, FH, SHADOW)
+    return img
+
+
+def escena_img(k):
+    """el escenario k (0..5), o el frenesí ("f0", "f1"), horneado y en caché."""
+    img = _ESCENAS_IMG.get(k)
+    if img is None:
+        if k in ("f0", "f1"):
+            piso = FRENESI_PISO[0 if k == "f0" else 1]
+            img = _hornear("frenesi", piso, FRENESI_DECO, FRENESI_BORDE, 99)
+        else:
+            _, kind, piso, deco, muro = ESCENAS[k]
+            img = _hornear(kind, piso, deco, muro, k)
+        _ESCENAS_IMG[k] = img
+    return img
 
 
 class World:
@@ -654,7 +1037,7 @@ class World:
 
     def __init__(self):
         self.g = Culebra()
-        self.fx = fx.Fx(gravity=0.0)
+        self.fx = fx.Fx(gravity=0.0, max_parts=320)
         self.fx.destello(WHITE)
         self.f = 0                   # reloj propio de la piel
         self.eatflash = 0
@@ -666,6 +1049,11 @@ class World:
         self.cabeza = self.g.body[0]
         self.score_pop = 0
         self.cuenta = -1
+        self.raton_mira = 1          # para dónde mira el ratón (1 der, -1 izq)
+        self.raton_x = None
+        sheet()
+        for k in list(range(len(ESCENAS))) + ["f0", "f1"]:
+            escena_img(k)            # todo horneado antes de la cuenta 3-2-1
 
     @property
     def over(self):
@@ -676,7 +1064,7 @@ class World:
         return self.g.score
 
     def _px(self, cx, cy):
-        return cx * CELL + CELL / 2, HUD + cy * CELL + CELL / 2
+        return FX + cx * CELL + CELL / 2, FY + cy * CELL + CELL / 2
 
     def update(self):
         g = self.g
@@ -696,8 +1084,14 @@ class World:
             self.bultos = [b + 1 for b in self.bultos if b + 1 < len(g.body)]
             if g.turbo:                         # con el ají, la cola echa fuego
                 x, y = self._px(*g.body[-1])
-                self.fx.burst(x, y, (WHITE, AMBER, ORANGE, RED), n=3, speed=0.8,
-                              life=14)
+                self.fx.burst(x, y, (WHITE, AMBER, ORANGE, RED), n=4, speed=1.0,
+                              life=16)
+        if g.raton:
+            if self.raton_x is not None and g.raton[0] != self.raton_x:
+                self.raton_mira = 1 if g.raton[0] > self.raton_x else -1
+            self.raton_x = g.raton[0]
+        else:
+            self.raton_x = None
         # la cuenta final del hambre: un latido por segundo
         s = (g.hambre + 59) // 60
         if s != self.cuenta:
@@ -709,10 +1103,10 @@ class World:
             self.cuenta = s
             if s <= 5 and not g.dead:
                 self.fx.shake(2 if s > 2 else 3)
-        if g.frenesi and self.f % 4 == 0:       # chispas de frenesí en los bordes
-            x = (self.f * 53) % W
-            self.fx.burst(x, HUD + 2, (WHITE, MAGENTA, BERRY2), n=1, speed=0.7,
-                          life=30, angle=math.pi / 2, spread=0.6)
+        if g.frenesi and self.f % 3 == 0:       # chispas de frenesí desde arriba
+            x = FX + (self.f * 53) % FW
+            self.fx.burst(x, FY + 2, (WHITE, MAGENTA, BERRY2), n=1, speed=0.9,
+                          life=40, angle=math.pi / 2, spread=0.6)
         self.eatflash = max(0, self.eatflash - 1)
         self.barrido = max(0, self.barrido - 1)
         self.score_pop = max(0, self.score_pop - 1)
@@ -729,17 +1123,17 @@ class World:
         kind = e[0]
         if kind == "manzana":
             x, y = self._px(e[1], e[2])
-            self.fx.burst(x, y, CHISPA_MANZANA, n=12, speed=1.4, life=18)
+            self.fx.burst(x, y, CHISPA_MANZANA, n=14, speed=1.7, life=20)
             self.eatflash = 4
             self.bultos.append(0)
             self.score_pop = 8
             if e[3] > 1:
-                self.fx.popup(x, y - 6, "+%d" % e[3], AMBER, life=28)
+                self.fx.popup(x, y - 8, "+%d" % e[3], AMBER, life=30)
         elif kind == "baya":
             x, y = self._px(e[1], e[2])
-            self.fx.burst(x, y, (WHITE, BERRY2, BERRY, MAGENTA), n=10, speed=1.4,
-                          life=16)
-            self.fx.popup(x, y - 6, "+%d" % e[3], BERRY2, life=24)
+            self.fx.burst(x, y, (WHITE, BERRY2, BERRY, MAGENTA), n=12, speed=1.7,
+                          life=18)
+            self.fx.popup(x, y - 8, "+%d" % e[3], BERRY2, life=26)
             self.score_pop = 8
         elif kind == "racha":
             self._cartel("RACHA x%d" % e[3], GOLD, "¡SIGUE COMIENDO!", AMBER, 55)
@@ -747,63 +1141,62 @@ class World:
             self.fx.shake(2)
         elif kind == "racha_fria":
             x, y = self._px(e[1], e[2])
-            self.fx.popup(x, y - 10, "racha fría", LABEL)
+            self.fx.popup(x, y - 12, "racha fría", LABEL)
         elif kind == "aji":
             x, y = self._px(e[1], e[2])
-            self.fx.burst(x, y, (WHITE, ORANGE, RED, APPLE), n=22, speed=2.2,
-                          life=26)
+            self.fx.burst(x, y, (WHITE, ORANGE, RED, APPLE), n=24, speed=2.6,
+                          life=28)
             self._cartel("¡AJÍ!", ORANGE, "TURBO +%d" % e[3], WHITE, 45)
             self.fx.destello(ORANGE)
             self.fx.shake(3)
             self.bultos.append(0)
         elif kind == "dorada":
             x, y = self._px(e[1], e[2])
-            self.fx.burst(x, y, CHISPA_DORADA, n=26, speed=2.4, life=30)
+            self.fx.burst(x, y, CHISPA_DORADA, n=28, speed=2.8, life=32)
             self._cartel("¡DORADA!", GOLD, "+%d" % e[3], WHITE, 45)
             self.fx.destello(GOLD)
             self.fx.shake(2)
             self.bultos.append(0)
         elif kind == "dorada_ida":
             x, y = self._px(e[1], e[2])
-            self.fx.burst(x, y, (GOLD2, GOLD, AMBER), n=8, speed=0.8, life=16)
+            self.fx.burst(x, y, (GOLD2, GOLD, AMBER), n=10, speed=1.0, life=18)
         elif kind == "poder":
             x, y = self._px(e[1], e[2])
-            self.fx.burst(x, y, CHISPA_PODER, n=20, speed=2.0, life=28)
+            self.fx.burst(x, y, CHISPA_PODER, n=22, speed=2.4, life=30)
             sub = "COME ARAÑAS" if e[3] == FANTASMA and self.g.aranas else None
             self._cartel(PODER_NOMBRE[e[3]], GHOST1 if e[3] == FANTASMA else MAGENTA,
                          sub, WHITE, 45)
             self.fx.destello(GHOST1)
         elif kind == "portal":
             x, y = self._px(e[1], e[2])
-            self.fx.burst(x, y, (WHITE, MAGENTA, GHOST1, GHOST2), n=12,
-                          speed=1.6, life=18)
+            self.fx.burst(x, y, (WHITE, MAGENTA, GHOST1, GHOST2), n=14,
+                          speed=1.9, life=20)
         elif kind == "raton":
             x, y = self._px(e[1], e[2])
-            self.fx.popup(x, y - 8, "un ratón", MOUSE, life=40)
+            self.fx.popup(x, y - 10, "un ratón", MOUSE, life=40)
         elif kind == "raton_comido":
             x, y = self._px(e[1], e[2])
-            self.fx.burst(x, y, (WHITE, MOUSE2, MOUSE, DIM), n=20, speed=2.0,
-                          life=24)
+            self.fx.burst(x, y, (WHITE, MOUSER[3], MOUSE, DIM), n=22, speed=2.4,
+                          life=26)
             self._cartel("¡ÑAM!", MOUSE2, "RATÓN +%d" % e[3], WHITE, 45)
             self.fx.shake(3)
             self.bultos += [0, 1]
         elif kind == "raton_ido":
             x, y = self._px(e[1], e[2])
-            self.fx.popup(x, y - 6, "se escapó", LABEL)
-            self.fx.burst(x, y, (MOUSE, DIM), n=6, speed=1.0, life=12)
+            self.fx.popup(x, y - 8, "se escapó", LABEL)
+            self.fx.burst(x, y, (MOUSE, DIM), n=8, speed=1.2, life=14)
         elif kind == "arana":
-            x, y = self._px(e[1], e[2])
             if len(self.g.aranas) == 1 and self.g.niv == ARANA_DESDE:
                 self._cartel("¡ARAÑA!", SPIDER2, "NO LA CHOQUES", WHITE, 60)
         elif kind == "arana_comida":
             x, y = self._px(e[1], e[2])
-            self.fx.burst(x, y, (WHITE, SPIDER2, SPIDER, GHOST1), n=24, speed=2.2,
-                          life=26)
+            self.fx.burst(x, y, (WHITE, SPIDER2, SPIDER, GHOST1), n=26, speed=2.6,
+                          life=28)
             self._cartel("¡CRUNCH!", SPIDER2, "+%d" % e[3], WHITE, 45)
             self.fx.shake(4)
         elif kind == "frenesi":
             self._cartel("¡FRENESÍ!", MAGENTA, "TODO VALE x2", GOLD, 110)
-            self.fx.popup(W / 2, HUD + 120, "se acabó la reserva: junta todo",
+            self.fx.popup(W / 2, FY + 190, "se acabó la reserva: junta todo",
                           WHITE, life=110, vy=-0.2)
             self.fx.shake(5)
             self.fx.destello(MAGENTA, 8)
@@ -822,344 +1215,490 @@ class World:
             self._cartel("NIVEL %d" % n, WHITE, sub, AMBER, 70)
         elif kind in ("muerte", "hambre", "picada"):
             x, y = self._px(e[1], e[2])
-            self.fx.burst(x, y, (WHITE, RED, APPLE2, BODY0), n=34, speed=2.6,
-                          life=34)
+            self.fx.burst(x, y, (WHITE, RED, APPLE2, S_M), n=36, speed=3.0,
+                          life=36)
             self.fx.shake(6)
             self.fx.destello(RED, 6)
 
     # --- dibujo ----------------------------------------------------------
-    def _cell(self, cx, cy, col):
-        pyxel.rect(cx * CELL, HUD + cy * CELL, CELL, CELL, col)
-
     def _fondo(self):
-        """el damero del escenario. al cambiar de nivel, el nuevo entra como
-        un telón de izquierda a derecha."""
+        """el escenario horneado. al cambiar de nivel, el nuevo entra como un
+        telón de izquierda a derecha."""
         g = self.g
         if g.frenesi:
-            pulso = (self.f // 10) % 2
-            a, b = (FRENESI_A, FRENESI_B) if pulso else (FRENESI_B, FRENESI_A)
-            nuevo = viejo = (a, b)
-        else:
-            nuevo = ESCENAS[self.escena][1:3]
-            viejo = ESCENAS[self.escena_vieja][1:3]
-        corte = W if not self.barrido else int(W * (1 - self.barrido / 24))
-        pyxel.rect(0, HUD, corte, H - HUD, nuevo[0])
-        if corte < W:
-            pyxel.rect(corte, HUD, W - corte, H - HUD, viejo[0])
-        for y in range(ROWS):
-            py = HUD + y * CELL
-            for x in range((y & 1) ^ 1, COLS, 2):
-                px = x * CELL
-                pyxel.rect(px, py, CELL, CELL, nuevo[1] if px < corte else viejo[1])
-        if self.barrido:
-            pyxel.rect(corte - 1, HUD, 2, H - HUD, WHITE)
+            pyxel.blt(0, HUD, escena_img("f0" if (self.f // 10) % 2 else "f1"),
+                      0, 0, W, H - HUD)
+            return
+        nuevo = escena_img(self.escena)
+        if not self.barrido:
+            pyxel.blt(0, HUD, nuevo, 0, 0, W, H - HUD)
+            return
+        corte = int(W * (1 - self.barrido / 24))
+        if corte > 0:
+            pyxel.blt(0, HUD, nuevo, 0, 0, corte, H - HUD)
+        pyxel.blt(corte, HUD, escena_img(self.escena_vieja), corte, 0, W - corte,
+                  H - HUD)
+        pyxel.rect(corte - 1, HUD, 2, H - HUD, WHITE)
+
+    def _ambiente(self):
+        """lo que se mueve en el escenario: luciérnagas de noche, brasas en el
+        volcán, copos en el glaciar. pocos píxeles, detrás de todo."""
+        g = self.g
+        if g.frenesi:
+            return
+        kind = ESCENAS[self.escena][1]
+        f = self.f
+        if kind == "baldosa":
+            for i in range(7):
+                x = FX + (i * 71 + int(18 * math.sin(f / 50 + i * 2))) % FW
+                y = FY + (i * 113 + int(14 * math.cos(f / 60 + i))) % FH
+                if (f // 20 + i) % 5:
+                    pyxel.pset(x, y, ESCENAS_DECO_LUZ)
+                    pyxel.dither(0.3)
+                    pyxel.rect(x - 1, y - 1, 3, 3, ESCENAS_DECO_LUZ)
+                    pyxel.dither(1.0)
+        elif kind == "lava":
+            for i in range(6):
+                x = FX + (i * 41 + f // 3) % FW
+                y = FY + FH - ((f * (1 + i % 3) // 2 + i * 57) % FH)
+                pyxel.pset(x, y, ORANGE if i % 2 else AMBER)
+        elif kind == "hielo":
+            for i in range(8):
+                x = FX + (i * 31 + int(6 * math.sin(f / 40 + i))) % FW
+                y = FY + ((f // 2 + i * 41) % FH)
+                pyxel.pset(x, y, WHITE)
 
     def draw(self):
         g = self.g
         sx, sy = self.fx.offset()
         pyxel.cls(BG)
-        pyxel.camera(-sx, -sy)                    # el temblor, sin tocar el frame
+        pyxel.camera(-sx, -sy)                    # el temblor, sin tocar el HUD
         self._fondo()
-        _, _, _, muro, muro2 = ESCENAS[self.escena]
-        for wx, wy in g.walls:                    # los muros, con relieve
-            px, py = wx * CELL, HUD + wy * CELL
-            pyxel.rect(px, py, CELL, CELL, muro)
-            pyxel.rect(px, py, CELL, 1, WHITE if self.barrido else muro2)
-            pyxel.rect(px + 1, py + 3, 3, 1, muro2)
-            pyxel.rect(px + 4, py + 6, 3, 1, muro2)
-            pyxel.rect(px, py + CELL - 1, CELL, 1, SHADOW)
+        self._ambiente()
+        self._muros()
         # la cuenta final, enorme y oscura detrás de todo
         s = (g.hambre + 59) // 60
         if s <= 5 and not g.dead:
-            big(W / 2, HUD + ROWS * CELL / 2, "%d" % s, DARKRED, 12, None)
-        if g.apple:
-            self._manzana(*g.apple)
-        for bx, by in g.bayas:
-            self._baya(bx, by)
+            big_ctext(W / 2, FY + FH / 2 - 42, "%d" % s, DARKRED, 14)
         if g.portales:
             self._portales(g.portales)
+        if g.apple:
+            self._fruta("apple", g.apple[0], g.apple[1])
+        for bx, by in g.bayas:
+            self._fruta("baya", bx, by, fase=bx + by)
         if g.gold:
             self._dorada(g.gold)
         if g.power:
             self._poder(g.power)
         if g.aji:
-            self._aji(g.aji)
+            if not (g.aji[2] < 90 and (self.f // 4) % 2):
+                self._fruta("aji", g.aji[0], g.aji[1])
         if g.raton:
             self._raton(g.raton)
         for a in g.aranas:
             self._arana(a)
         self._culebra(g)
-        self.fx.draw(0, 0)
+        self._chispas()
         if self.banner:
             self._draw_banner()
         pyxel.camera()
-        # el hambre que se acaba: el borde del tablero late en rojo
+        # el hambre que se acaba: el borde del campo late en rojo
         if s <= 5 and not g.dead and (self.f // 8) % 2:
-            for k in range(2):
-                pyxel.rectb(k, HUD + k, W - 2 * k, H - HUD - 2 * k, RED)
-        self.fx.draw_flash(0, HUD, W, H - HUD)
+            for k in range(3):
+                pyxel.rectb(FX - BORDE + k, FY - BORDE + k, W - 2 * k,
+                            FH + 2 * BORDE - 2 * k, RED)
+        self.fx.draw_flash(FX, FY, FW, FH)
         self._hud()
+
+    def _chispas(self):
+        """las chispas de fx de 2x2 mientras están vivas, y los carteles que
+        suben con texto grande."""
+        rect = pyxel.rect
+        for x, y, _, _, vida, vida0, ramp, _ in self.fx.parts:
+            i = int((1.0 - vida / vida0) * len(ramp))
+            c = ramp[min(i, len(ramp) - 1)]
+            if vida * 2 > vida0:
+                rect(int(x), int(y), 2, 2, c)
+            else:
+                pyxel.pset(int(x), int(y), c)
+        t = self.fx.t
+        for x, y, _, s, col, vida, vida0 in self.fx.pops:
+            if vida < vida0 * 0.35 and (t // 3) % 2:
+                continue
+            sc = 2 if len(s) <= 12 else 1
+            hw = big_width(s, sc) / 2
+            x = min(max(x, FX + hw + 2), FX + FW - hw - 2)   # que no se salga
+            big_ctext(x, int(y) - 6, s, col, sc, SHADOW)
 
     def _draw_banner(self):
         s, col, sub, subcol, n, n0 = self.banner
         edad = n0 - n
-        esc = 3 + max(0.0, 1.5 - edad * 0.25)    # entra grande y se asienta
         if n < 12 and (n // 2) % 2:
             return
-        cy = HUD + 70
-        big(W / 2, cy, s, col, esc)
+        tope = 5 if big_width(s, 5) <= FW - 10 else (4 if big_width(s, 4) <= FW else 3)
+        esc = tope + (1 if edad < 5 and big_width(s, tope + 1) <= W else 0)
+        cy = FY + 96
+        big_ctext(W / 2 + 2, cy + 2, s, SHADOW, esc)
+        big_ctext(W / 2, cy, s, col, esc)
         if sub:
-            big(W / 2, cy + 26, sub, subcol, 2 if len(sub) <= 28 else 1)
+            sc = 2 if big_width(sub, 2) <= FW else 1
+            yy = cy + 6 * esc + 10
+            big_ctext(W / 2 + 1, yy + 1, sub, SHADOW, sc)
+            big_ctext(W / 2, yy, sub, subcol, sc)
 
-    def _manzana(self, ax, ay):
-        px, py = ax * CELL, HUD + ay * CELL
-        c = APPLE if self.eatflash == 0 else APPLE2
-        pyxel.circ(px + 4, py + 4, 3, c)
-        pyxel.rect(px + 2, py + 2, 2, 2, APPLE2)
-        if (self.f // 6) % 8 == 0:               # un brillo cada tanto
-            pyxel.pset(px + 2, py + 2, WHITE)
-        pyxel.rect(px + 4, py, 1, 2, BODY0)      # el cabito
-        pyxel.pset(px + 5, py, BODY1)
+    def _sombra(self, px, py, w=9):
+        """la sombra de una cosa sobre el piso: una mancha oscura."""
+        pyxel.elli(px + (C - w) // 2 + 1, py + C - 4, w, 4, SHADOW)
 
-    def _baya(self, bx, by):
-        px, py = bx * CELL, HUD + by * CELL
-        for dx, dy in ((2, 2), (5, 3), (3, 5)):
-            pyxel.circ(px + dx, py + dy + ((self.f // 8 + bx) % 2), 1, BERRY)
-            pyxel.pset(px + dx, py + dy - 1 + ((self.f // 8 + bx) % 2), BERRY2)
+    def _fruta(self, nombre, cx, cy, fase=0):
+        px, py = FX + cx * C, FY + cy * C
+        bob = 1 if (self.f // 12 + fase) % 2 else 0     # flota apenas
+        self._sombra(px, py)
+        pyxel.blt(px, py - 1 - bob, _SHEET, SP[nombre], 0, C, C, KEY)
+        if nombre == "apple":
+            if self.eatflash:
+                pyxel.rect(px + 2, py + 3 - bob, 3, 3, WHITE)
+            elif (self.f // 6) % 10 == 0:              # un brillo cada tanto
+                pyxel.pset(px + 3, py + 3 - bob, WHITE)
+
+    def _muros(self):
+        g = self.g
+        if not g.walls:
+            return
+        u = self.escena * C
+        for wx, wy in g.walls:                    # la sombra proyectada
+            pyxel.rect(FX + wx * C + 2, FY + wy * C + 3, C, C, SHADOW)
+        for wx, wy in g.walls:
+            px, py = FX + wx * C, FY + wy * C
+            pyxel.blt(px, py, _SHEET, u, MURO_V, C, C)
+            if self.barrido:
+                pyxel.rect(px + 1, py + 1, C - 2, 1, WHITE)
 
     def _portales(self, portales):
         """las dos bocas, girando en sentidos opuestos para que se lean ligadas."""
         a, b, ttl = portales
-        for k, (px_, py_) in enumerate((a, b)):
-            if ttl < 120 and (self.f // 4) % 2:
-                return
-            cx, cy = px_ * CELL + CELL // 2, HUD + py_ * CELL + CELL // 2
-            col = GHOST1 if k == 0 else MAGENTA
-            pyxel.circb(cx, cy, 3, GHOST2 if k == 0 else SPIDER)
+        if ttl < 120 and (self.f // 4) % 2:
+            return
+        for k, (cx_, cy_) in enumerate((a, b)):
+            cx, cy = FX + cx_ * C + C // 2, FY + cy_ * C + C // 2
+            col, col2 = (GHOST1, GHOST2) if k == 0 else (MAGENTA, SPIDERR[1])
+            pyxel.circ(cx, cy, 6, SHADOW)
+            pyxel.circb(cx, cy, 6, col2)
+            pyxel.circb(cx, cy, 3 + (self.f // 8) % 2, col)
             for i in range(4):
                 ang = self.f * (0.14 if k == 0 else -0.14) + i * math.pi / 2
-                pyxel.pset(int(cx + math.cos(ang) * 3), int(cy + math.sin(ang) * 3),
-                           col)
-            pyxel.pset(cx, cy, WHITE)
+                pyxel.rect(int(cx + math.cos(ang) * 5), int(cy + math.sin(ang) * 5),
+                           1 + (i == 0), 1 + (i == 0), WHITE)
+            pyxel.rect(cx - 1, cy - 1, 2, 2, WHITE)
 
     def _dorada(self, gold):
         gx, gy, ttl = gold
-        px, py = gx * CELL + CELL // 2, HUD + gy * CELL + CELL // 2
         if ttl < 90 and (self.f // 4) % 2:      # titila antes de irse
             return
-        r = 3 + (self.f // 6) % 2
-        pyxel.circ(px, py, r, GOLD)
-        pyxel.circ(px, py, r - 2, GOLD2)
-        for i in range(4):                                  # destellos en cruz
-            a = self.f * 0.1 + i * math.pi / 2
-            pyxel.pset(int(px + 6 * math.cos(a)), int(py + 6 * math.sin(a)), GOLD2)
+        px, py = FX + gx * C, FY + gy * C
+        self._sombra(px, py)
+        bob = 1 if (self.f // 10) % 2 else 0
+        pyxel.blt(px, py - 1 - bob, _SHEET, SP["gold"], 0, C, C, KEY)
+        cx, cy = px + 6, py + 6 - bob
+        for i in range(4):                                  # destellos que giran
+            a = self.f * 0.08 + i * math.pi / 2
+            x, y = int(cx + 10 * math.cos(a)), int(cy + 10 * math.sin(a))
+            pyxel.pset(x, y, GOLD2)
+            if (self.f // 4 + i) % 3 == 0:
+                pyxel.pset(x + 1, y, WHITE)
+                pyxel.pset(x - 1, y, WHITE)
+                pyxel.pset(x, y + 1, WHITE)
+                pyxel.pset(x, y - 1, WHITE)
 
     def _poder(self, power):
         px_, py_, tipo, ttl = power
-        px, py = px_ * CELL, HUD + py_ * CELL
         if ttl < 90 and (self.f // 4) % 2:
             return
+        px, py = FX + px_ * C, FY + py_ * C
+        self._sombra(px, py, 11)
         col = GHOST1 if tipo == FANTASMA else MAGENTA
-        pyxel.rect(px, py, CELL, CELL, SHADOW)
-        pyxel.rectb(px, py, CELL, CELL, col)
-        if tipo == FANTASMA:                                # una sabanita
-            pyxel.rect(px + 2, py + 2, 4, 3, col)
-            pyxel.pset(px + 2, py + 5, col)
-            pyxel.pset(px + 4, py + 5, col)
-            pyxel.pset(px + 3, py + 3, SHADOW)
-        else:                                               # una tijera
-            pyxel.line(px + 2, py + 2, px + 5, py + 5, col)
-            pyxel.line(px + 5, py + 2, px + 2, py + 5, col)
-
-    def _aji(self, aji):
-        ax, ay, ttl = aji
-        px, py = ax * CELL, HUD + ay * CELL
-        if ttl < 90 and (self.f // 4) % 2:
-            return
-        # un ají: rojo, curvo, con el cabito verde arriba
-        pyxel.rect(px + 2, py + 2, 3, 3, RED)
-        pyxel.rect(px + 3, py + 4, 3, 2, RED)
-        pyxel.rect(px + 5, py + 5, 2, 2, RED)
-        pyxel.pset(px + 7, py + 7, RED)
-        pyxel.pset(px + 2, py + 2, ORANGE)
-        pyxel.pset(px + 3, py + 3, ORANGE)
-        pyxel.rect(px + 1, py, 2, 2, GREEN)
-        pyxel.pset(px + 3, py + 1, BODY1)
+        bob = 1 if (self.f // 12) % 2 else 0
+        cx, cy = px + 6, py + 5 - bob
+        pyxel.circ(cx, cy, 7, SHADOW)
+        pyxel.circ(cx, cy, 6, PANEL2)
+        pyxel.circb(cx, cy, 7, col if (self.f // 10) % 2 else FRAME2)
+        pyxel.pset(cx - 4, cy - 4, WHITE)
+        pyxel.blt(cx - 5, cy - 5, _SHEET, SP["ghost" if tipo == FANTASMA else "tijera"],
+                  0, 10, 10, KEY)
 
     def _raton(self, r):
         rx, ry, ttl, _ = r
         if ttl < 90 and (self.f // 4) % 2:
             return
-        px, py = rx * CELL, HUD + ry * CELL
-        pata = (self.f // 5) % 2
-        pyxel.rect(px + 1, py + 3, 5, 3, MOUSE)             # el cuerpo
-        pyxel.rect(px + 5, py + 2, 2, 2, MOUSE)             # la cabeza
-        pyxel.pset(px + 5, py + 1, MOUSE2)                  # la oreja
-        pyxel.pset(px + 7, py + 3, MOUSE2)                  # la nariz
-        pyxel.pset(px + 6, py + 2, SHADOW)                  # el ojo
-        pyxel.line(px, py + 4, px - 1, py + 3 - pata, MOUSE2)   # la cola
-        pyxel.pset(px + 2 + pata, py + 6, MOUSE)
-        pyxel.pset(px + 4 - pata, py + 6, MOUSE)
+        px, py = FX + rx * C, FY + ry * C
+        self._sombra(px, py, 11)
+        m = self.raton_mira
+        u = SP["mouse2" if (self.f // 5) % 2 else "mouse"]
+        pyxel.blt(px, py - 1, _SHEET, u, 0, C * m, C, KEY)
+        cola = 1 if (self.f // 6) % 2 else -1               # la cola se menea
+        if m > 0:
+            pyxel.line(px, py + 6, px - 2, py + 5, MOUSER[1])
+            pyxel.line(px - 2, py + 5, px - 4, py + 5 + cola, MOUSER[1])
+        else:
+            pyxel.line(px + 11, py + 6, px + 13, py + 5, MOUSER[1])
+            pyxel.line(px + 13, py + 5, px + 15, py + 5 + cola, MOUSER[1])
 
     def _arana(self, a):
         ax, ay, _, _, nace, _ = a
         if nace and (self.f // 4) % 2:
             return                                          # está naciendo
-        cx, cy = ax * CELL + 4, HUD + ay * CELL + 4
-        leg = SPIDER2 if not nace else LABEL
+        px, py = FX + ax * C, FY + ay * C
+        cx, cy = px + 6, py + 6
+        o, s, m, l, ojo = SPIDERR
+        if nace:
+            s, m, l = DIM, LABEL, TXT
+        self._sombra(px, py, 12)
         p = (self.f // 6) % 2
         for k in (-1, 1):                                   # ocho patas
-            pyxel.line(cx, cy, cx + 4 * k, cy - 3 + p, leg)
-            pyxel.line(cx, cy, cx + 4 * k, cy + 3 - p, leg)
-            pyxel.line(cx, cy, cx + 4 * k, cy - 1 - p, leg)
-            pyxel.line(cx, cy, cx + 4 * k, cy + 1 + p, leg)
-        pyxel.circ(cx, cy, 2, SPIDER if not nace else DIM)
-        pyxel.pset(cx - 1, cy - 1, RED)
-        pyxel.pset(cx + 1, cy - 1, RED)
+            for dy0, dy1 in ((-2, -5 + p), (0, -2 - p), (1, 3 + p), (2, 6 - p)):
+                pyxel.line(cx, cy + dy0, cx + 3 * k, cy + dy0 - 2, o)
+                pyxel.line(cx + 3 * k, cy + dy0 - 2, cx + 6 * k, cy + dy1, s)
+        pyxel.circ(cx, cy + 1, 4, o)                        # el abdomen
+        pyxel.circ(cx, cy + 1, 3, m)
+        pyxel.rect(cx - 2, cy - 1, 2, 2, l)
+        pyxel.rect(cx - 1, cy + 2, 2, 2, o)                 # una marca
+        pyxel.rect(cx - 2, cy - 5, 5, 3, o)                 # la cabeza
+        pyxel.rect(cx - 1, cy - 5, 1, 1, ojo)
+        pyxel.rect(cx + 1, cy - 5, 1, 1, ojo)
 
     def _culebra(self, g):
-        n = len(g.body)
+        """la culebra por capas: sombra en el piso, contorno, cuerpo, anillos y
+        un bisel de luz y sombra sólo en los lados que no se pegan a otro
+        segmento: así un tramo recto se ve como un tubo continuo."""
+        body = g.body
+        n = len(body)
         fantasma = bool(g.ghost)
-        hambre = g.hambre < 5 * 60 and (self.f // 6) % 2
         bultos = set(self.bultos)
         if fantasma:
-            pyxel.dither(0.6 if (self.f // 3) % 2 else 0.8)
-        # de la cola a la cabeza, así la cabeza queda encima
-        for i in range(n - 1, 0, -1):
-            cx, cy = g.body[i]
-            px, py = cx * CELL, HUD + cy * CELL
-            # la cola se afina: las últimas tres celdas, cada vez más chicas
+            O, S, M, Cc, L = GHOSTR
+        else:
+            O, S, M, Cc, L = S_O, S_S, S_M, S_C, S_L
+        piezas = []
+        for i in range(n):
+            cx, cy = body[i]
+            px, py = FX + cx * C, FY + cy * C
             desde_cola = n - 1 - i
-            if n > 5:
-                ins = 3 if desde_cola == 0 else (2 if desde_cola == 1 else 1)
-            else:
-                ins = 2 if desde_cola == 0 else 1
-            if i in bultos:
+            if i == 0:
                 ins = 0
-            if fantasma:
-                col, col2 = (GHOST1, GHOST2)
-            elif g.turbo and (self.f // 2 + i) % 4 == 0:
-                col, col2 = ORANGE, RED
+            elif n > 5:
+                ins = 4 if desde_cola == 0 else (3 if desde_cola == 1 else
+                                                 (2 if desde_cola == 2 else 1))
             else:
-                col, col2 = (BODY1, BODY0) if (i // 2) % 2 == 0 else (BODY0, BODY1)
-            # el puente hacia el segmento de adelante: así se ve un cuerpo y no
-            # una fila de cuadraditos
-            nx, ny = g.body[i - 1]
-            qx, qy = nx * CELL, HUD + ny * CELL
-            if abs(nx - cx) + abs(ny - cy) == 1:
-                x0, x1 = min(px, qx) + ins, max(px, qx) + CELL - ins
-                y0, y1 = min(py, qy) + ins, max(py, qy) + CELL - ins
-                if nx != cx:
-                    pyxel.rect(x0, py + ins, x1 - x0, CELL - 2 * ins, col)
+                ins = 3 if desde_cola == 0 else 1
+            if i in bultos and i:
+                ins = 0
+            x0, y0, x1, y1 = px + ins, py + ins, px + C - ins, py + C - ins
+            conn = 0                                        # bits: der izq aba arr
+            for j in (i - 1, i + 1):
+                if 0 <= j < n:
+                    qx, qy = body[j]
+                    dx, dy = qx - cx, qy - cy
+                    if abs(dx) + abs(dy) != 1:
+                        continue                            # salto de portal
+                    if dx == 1:
+                        x1 = px + C
+                        conn |= 1
+                    elif dx == -1:
+                        x0 = px
+                        conn |= 2
+                    elif dy == 1:
+                        y1 = py + C
+                        conn |= 4
+                    else:
+                        y0 = py
+                        conn |= 8
+            piezas.append((x0, y0, x1 - x0, y1 - y0, conn, i))
+        rect = pyxel.rect
+        if fantasma:
+            pyxel.dither(0.65 if (self.f // 3) % 2 else 0.85)
+        else:
+            for x, y, w, h, _, _ in piezas:                 # la sombra en el piso
+                rect(x + 2, y + 3, w, h, SHADOW)
+        for x, y, w, h, _, i in piezas[1:]:
+            rect(x - 1, y - 1, w + 2, h + 2, O)
+        turbo = g.turbo
+        for x, y, w, h, conn, i in reversed(piezas[1:]):
+            if turbo and (self.f // 2 + i) % 4 == 0:
+                c, l, s, m = TURBOR[2], TURBOR[3], TURBOR[1], TURBOR[1]
+            else:
+                c, l, s, m = Cc, L, S, M
+            rect(x, y, w, h, c)
+            b = 1 if min(w, h) <= 6 else 2
+            # los anillos: uno de cada dos segmentos lleva una franja oscura
+            # de través; el otro, una mancha clara de panza
+            if min(w, h) >= 6:
+                cx = FX + body[i][0] * C + C // 2 - 1
+                cy = FY + body[i][1] * C + C // 2 - 1
+                if i % 2 == 0:
+                    if conn & 12 and not conn & 3:          # va vertical
+                        rect(x, cy, w, 2, m)
+                    else:
+                        rect(cx, y, 2, h, m)
                 else:
-                    pyxel.rect(px + ins, y0, CELL - 2 * ins, y1 - y0, col)
-            pyxel.rect(px + ins, py + ins, CELL - 2 * ins, CELL - 2 * ins, col)
-            if CELL - 2 * ins >= 4:                # las escamas: un punto claro
-                pyxel.pset(px + 3, py + 3, col2 if not fantasma else WHITE)
-        self._cabeza(g, hambre)
+                    rect(cx, cy, 2, 2, BELLY if not fantasma else l)
+            if not conn & 8:
+                rect(x, y, w, b, l)
+            if not conn & 2:
+                rect(x, y, b, h, l)
+            if not conn & 4:
+                rect(x, y + h - b, w, b, s)
+            if not conn & 1:
+                rect(x + w - b, y, b, h, s)
+        self._cabeza(g, piezas[0][4], O, S, L)
         if fantasma:
             pyxel.dither(1.0)
 
-    def _cabeza(self, g, hambre):
+    def _cabeza(self, g, conn, O, S, L):
         hx, hy = g.body[0]
-        px, py = hx * CELL, HUD + hy * CELL
+        px, py = FX + hx * C, FY + hy * C
         dx, dy = g.dir
+        hambre = g.hambre < 5 * 60 and (self.f // 6) % 2
         if g.ghost:
-            col = GHOST1
+            col = GHOSTR[3]
         elif hambre:
-            col = RED
+            O, S, col, L = HAMBRER[0], HAMBRER[1], HAMBRER[2], HAMBRER[3]
         elif g.turbo and (self.f // 2) % 2:
-            col = ORANGE
+            O, S, col, L = TURBOR[0], TURBOR[1], TURBOR[2], TURBOR[3]
         else:
             col = HEAD
-        # cabeza redondeada: dos rectángulos en cruz
-        pyxel.rect(px + 1, py, 6, 8, col)
-        pyxel.rect(px, py + 1, 8, 6, col)
-        # el lado de atrás se pega al cuello (sin redondear)
-        if dx == 1:
-            pyxel.rect(px, py, 2, 8, col)
-        elif dx == -1:
-            pyxel.rect(px + 6, py, 2, 8, col)
-        elif dy == 1:
-            pyxel.rect(px, py, 8, 2, col)
+        rect = pyxel.rect
+        h = C // 2
+        # cabeza redondeada (contorno y relleno en cruz), pegada al cuello
+        rect(px - 1, py + 1, C + 2, C - 2, O)
+        rect(px + 1, py - 1, C - 2, C + 2, O)
+        rect(px, py, C, C, O)
+        rect(px, py + 1, C, C - 2, col)
+        rect(px + 1, py, C - 2, C, col)
+        if conn & 1:
+            rect(px + h, py, h, C, col)
+        if conn & 2:
+            rect(px, py, h, C, col)
+        if conn & 4:
+            rect(px, py + h, C, h, col)
+        if conn & 8:
+            rect(px, py, C, h, col)
+        # bisel: luz arriba-izquierda, sombra abajo-derecha
+        if not conn & 8:
+            rect(px + 2, py, C - 4, 1, L)
+            rect(px + 1, py + 1, 3, 1, L)
+        if not conn & 2:
+            rect(px, py + 2, 1, C - 4, L)
+        if not conn & 4:
+            rect(px + 2, py + C - 1, C - 4, 1, S)
+        if not conn & 1:
+            rect(px + C - 1, py + 2, 1, C - 4, S)
+        # dos manchas oscuras en la nuca, del lado del cuello
+        if dx:
+            mx_ = px + (1 if dx > 0 else C - 3)
+            rect(mx_, py + h - 1, 2, 2, S)
         else:
-            pyxel.rect(px, py + 6, 8, 2, col)
+            my_ = py + (1 if dy > 0 else C - 3)
+            rect(px + h - 1, my_, 2, 2, S)
         # los ojos miran hacia donde va; muerta, son dos cruces
         if dx:
-            ex = px + (4 if dx > 0 else 2)
-            ojos = ((ex, py + 1), (ex, py + 5))
+            ex = px + (6 if dx > 0 else 3)
+            ojos = ((ex, py + 1), (ex, py + C - 4))
         else:
-            ey = py + (4 if dy > 0 else 2)
-            ojos = ((px + 1, ey), (px + 5, ey))
-        for k, (ox, oy) in enumerate(ojos):
+            ey = py + (6 if dy > 0 else 3)
+            ojos = ((px + 1, ey), (px + C - 4, ey))
+        for ox, oy in ojos:
             if g.dead:
-                pyxel.line(ox, oy, ox + 1, oy + 1, SHADOW)
-                pyxel.line(ox + 1, oy, ox, oy + 1, SHADOW)
+                pyxel.line(ox, oy, ox + 2, oy + 2, SHADOW)
+                pyxel.line(ox + 2, oy, ox, oy + 2, SHADOW)
                 continue
-            pyxel.rect(ox, oy, 2, 2, WHITE)
-            # la pupila, del lado hacia donde mira
+            rect(ox, oy, 3, 3, WHITE)
+            # la pupila, una rayita del lado hacia donde mira
             if dx:
-                pyxel.pset(ox + (dx > 0), oy + k, SHADOW)
+                rect(ox + (2 if dx > 0 else 0), oy, 1, 3, SHADOW)
             else:
-                pyxel.pset(ox + k, oy + (dy > 0), SHADOW)
+                rect(ox, oy + (2 if dy > 0 else 0), 3, 1, SHADOW)
+        # las narices, al frente
+        if dx:
+            nx = px + (C - 1 if dx > 0 else 0)
+            pyxel.pset(nx, py + h - 2, O)
+            pyxel.pset(nx, py + h + 1, O)
+        else:
+            ny = py + (C - 1 if dy > 0 else 0)
+            pyxel.pset(px + h - 2, ny, O)
+            pyxel.pset(px + h + 1, ny, O)
         # la lengua sale cada tanto, bífida
         if not g.dead and (self.f % 70) < 8:
             if dx:
-                fx_ = px + (8 if dx > 0 else -1)
-                pyxel.pset(fx_, py + 4, RED)
-                pyxel.pset(fx_ + dx, py + 3, RED)
-                pyxel.pset(fx_ + dx, py + 5, RED)
+                fx_ = px + (C + 1 if dx > 0 else -2)
+                pyxel.line(fx_, py + h, fx_ + 2 * dx, py + h, RED)
+                pyxel.pset(fx_ + 3 * dx, py + h - 1, RED)
+                pyxel.pset(fx_ + 3 * dx, py + h + 1, RED)
             else:
-                fy_ = py + (8 if dy > 0 else -1)
-                pyxel.pset(px + 4, fy_, RED)
-                pyxel.pset(px + 3, fy_ + dy, RED)
-                pyxel.pset(px + 5, fy_ + dy, RED)
+                fy_ = py + (C + 1 if dy > 0 else -2)
+                pyxel.line(px + h, fy_, px + h, fy_ + 2 * dy, RED)
+                pyxel.pset(px + h - 1, fy_ + 3 * dy, RED)
+                pyxel.pset(px + h + 1, fy_ + 3 * dy, RED)
 
     def _hud(self):
         g = self.g
-        pyxel.rect(0, 0, W, HUD, PANEL)
-        pyxel.rect(0, HUD - 1, W, 1, FRAME)
+        rect = pyxel.rect
+        rect(0, 0, W, HUD, PANEL)
+        pyxel.dither(0.5)
+        rect(0, 0, W, 8, PANEL2)
+        pyxel.dither(1.0)
+        rect(0, HUD - 2, W, 1, FRAME2)
+        rect(0, HUD - 1, W, 1, SHADOW)
         # el puntaje, grande
         sc = "%d" % g.score
-        esc = 2.4 if self.score_pop > 4 else 2
-        big(3 + len(sc) * 4, 7, sc, GOLD if self.score_pop else WHITE, esc)
-        x = 6 + len(sc) * 8
+        big_text(6, 6, sc, GOLD if self.score_pop else WHITE, 3, SHADOW)
+        x = 9 + big_width(sc, 3)
         m = g.mult()
         if m > 1 or g.frenesi:
             t = "x%d" % (m * (FRENESI_X if g.frenesi else 1))
-            col = GOLD if (self.f // 6) % 2 else AMBER
-            big(x + len(t) * 4 + 1, 7, t, MAGENTA if g.frenesi else col, 2)
-            x += len(t) * 8 + 4
-        # la mecha de la racha, bajo el multiplicador
+            col = MAGENTA if g.frenesi else (GOLD if (self.f // 6) % 2 else AMBER)
+            big_text(x, 12, t, col, 2, SHADOW)
+            x += big_width(t, 2) + 4
+        # la mecha de la racha, bajo el puntaje
         if g.racha:
-            fx.bar(3, HUD - 3, 40, 1, g.racha_t / RACHA_TTL, AMBER, PANEL)
+            fx.bar(6, 25, max(24, x - 10), 2, g.racha_t / RACHA_TTL, AMBER, GRID)
+        # a la derecha: el nivel y el escenario
+        nv = "NV%d" % g.level()
+        big_text(W - 6 - big_width(nv, 2), 12, nv, AMBER, 2, SHADOW)
+        nombre = "FRENESÍ" if g.frenesi else ESCENAS[self.escena][0]
+        text(W - 6 - len(nombre) * 4, 3, nombre,
+             MAGENTA if g.frenesi else LABEL)
+        # al medio: lo que tienes puesto
+        mx = max(x + 4, 96)
+        if g.ghost:
+            pyxel.blt(mx, 4, _SHEET, SP["ghost"], 0, 10, 10, KEY)
+            text(mx + 13, 7, "FANTASMA", GHOST1)
+            fx.bar(mx, 17, 54, 3, g.ghost / FANTASMA_TTL, GHOST1, GRID)
+        elif g.turbo:
+            pyxel.blt(mx, 3, _SHEET, SP["aji"], 0, C, C, KEY)
+            text(mx + 14, 7, "TURBO", ORANGE if (self.f // 4) % 2 else RED)
+            fx.bar(mx, 17, 54, 3, g.turbo / AJI_TURBO, ORANGE, GRID)
+        elif g.frenesi and (self.f // 10) % 2:
+            big_text(mx, 12, "¡x2!", MAGENTA, 2, SHADOW)
         # el hambre, con su manzana: es el reloj de la partida y manda
-        hx0 = 98
         frac = g.hambre / HAMBRE
         urge = g.hambre < 5 * 60
         col = RED if (frac < 0.25 and (self.f // 8) % 2) else (
             AMBER if not g.frenesi else MAGENTA)
-        pyxel.circ(hx0 - 7, 7, 3, APPLE)
-        pyxel.rect(hx0 - 7, 2, 1, 2, BODY1)
-        fx.bar(hx0, 3, 76, 6, frac, col, GRID, FRAME if not urge else RED)
+        pyxel.blt(4, 27, _SHEET, SP["apple"], 0, C, C, KEY)
+        bw = W - 20 - 46
+        fx.bar(19, 30, bw, 7, frac, col, GRID, RED if urge else FRAME2)
+        rect(20, 31, max(0, int((bw - 2) * frac)), 1, WHITE if not urge else AMBER)
         # la reserva: cuánto aire más pueden dar las frutas (la barrita de
         # abajo). cuando se vacía arranca el frenesí
-        if g.frenesi:
-            if (self.f // 10) % 2:
-                text(hx0 + 2, 10, "FRENESÍ x2", MAGENTA)
-        else:
-            fx.bar(hx0, 11, 76, 2, g.extra / EXTRA_MAX, TEAL, GRID)
-        segs = "%ds" % ((g.hambre + 59) // 60)
-        text(hx0 + 80, 5, segs, RED if urge else TXT)
-        # lo que tienes puesto
-        if g.ghost:
-            text(198, 2, "FANTASMA", GHOST1)
-            fx.bar(198, 9, 30, 2, g.ghost / FANTASMA_TTL, GHOST1, GRID)
-        elif g.turbo:
-            text(198, 2, "TURBO", ORANGE if (self.f // 4) % 2 else RED)
-            fx.bar(198, 9, 30, 2, g.turbo / AJI_TURBO, ORANGE, GRID)
-        r = "NV%d" % g.level()
-        text(W - len(r) * 4 - 3, 5, r, AMBER)
+        if not g.frenesi:
+            fx.bar(19, 39, bw, 2, g.extra / EXTRA_MAX, TEAL, GRID)
+        segs = "%d" % ((g.hambre + 59) // 60)
+        big_text(W - 14 - big_width(segs, 2), 28, segs, RED if urge else TXT, 2,
+                 SHADOW)
+        text(W - 10, 34, "s", LABEL)
+
+
+ESCENAS_DECO_LUZ = ESCENAS[5][3][2]          # el verde de las luciérnagas
 
 
 class Game:
@@ -1167,11 +1706,13 @@ class Game:
         Cabinet(
             game_id="culebra", title="CULEBRA",
             subtitle="come antes de que se acabe",
-            howto=["flechas, wasd o desliza el dedo",
+            howto=["desliza el dedo, flechas o wasd",
                    "el hambre baja: cada fruta te da aire",
+                   "encadena comidas: la racha sube a x3",
                    "caza al ratón · esquiva las arañas",
+                   "el fantasma te deja comer arañas",
                    "sin reserva: frenesí final, todo vale x2"],
-            width=W, height=H, palette=PAL, scale=3,
+            width=W, height=H, palette=PAL, scale=2,
             ui=UIColors(bg=BG, text=TXT, dim=LABEL, accent=GREEN,
                         warn=RED, shadow=SHADOW, panel=GRID),
             make_world=lambda: World(),

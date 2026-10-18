@@ -3,8 +3,8 @@
 title    = "Culebra"
 author   = "Jona"
 year     = 2026
-width    = 256
-height   = 224
+width    = 252
+height   = 368
 blurb    = "el snake con hambre: caza ratones, esquiva arañas, encadena rachas y cierra con un frenesí x2"
 controls = "flechas o wasd mueven · esc salir"
 
